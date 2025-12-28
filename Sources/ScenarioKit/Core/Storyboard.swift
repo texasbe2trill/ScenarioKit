@@ -66,6 +66,7 @@ struct StoryboardDocument: Decodable {
         let expected: [String]?
         let result: String?
         let event: YAMLValue?
+        let matchedRules: [String]?
     }
 }
 

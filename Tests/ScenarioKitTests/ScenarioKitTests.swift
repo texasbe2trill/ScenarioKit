@@ -6,15 +6,15 @@ final class ScenarioKitTests: XCTestCase {
         let events: [YAMLValue] = [
             .object([
                 "timestamp": .string("2024-05-01T10:11:12Z"),
-                "eventMessage": .string("App crashed"),
-                "subsystem": .string("com.apple.test"),
-                "category": .string("Crash"),
-                "process": .string("SampleApp")
+                "eventMessage": .string("Outgoing HTTPS connection"),
+                "subsystem": .string("com.apple.network"),
+                "category": .string("Network"),
+                "process": .string("curl")
             ]),
             .object([
                 "timestamp": .string("2024-05-01T10:12:00Z"),
                 "eventMessage": .string("Network connect"),
-                "subsystem": .string("net"),
+                "subsystem": .string("com.apple.network"),
                 "category": .string("Connection"),
                 "process": .string("curl")
             ])
@@ -52,8 +52,9 @@ final class ScenarioKitTests: XCTestCase {
         let events: [YAMLValue] = [
             .object([
                 "timestamp": .string("2024-05-02T10:11:12Z"),
-                "eventMessage": .string("App crashed"),
-                "subsystem": .string("com.apple.test")
+                "eventMessage": .string("Outgoing HTTPS connection"),
+                "subsystem": .string("com.apple.network"),
+                "process": .string("curl")
             ])
         ]
 
@@ -72,8 +73,9 @@ final class ScenarioKitTests: XCTestCase {
         let events: [YAMLValue] = [
             .object([
                 "timestamp": .string("2024-05-02T10:11:12Z"),
-                "eventMessage": .string("App crashed"),
-                "subsystem": .string("com.apple.test")
+                "eventMessage": .string("Outgoing HTTPS connection"),
+                "subsystem": .string("com.apple.network"),
+                "process": .string("curl")
             ])
         ]
 
@@ -85,7 +87,7 @@ final class ScenarioKitTests: XCTestCase {
             maxFixtures: 10
         )
 
-        XCTAssertTrue(html.contains("App crashed"), "HTML should embed event message in timeline JSON")
+        XCTAssertTrue(html.contains("Outgoing HTTPS connection"), "HTML should embed event message in timeline JSON")
         XCTAssertFalse(html.contains("\"headline\" : \"Event 1\""), "HTML should not use placeholder Event labels")
     }
 
@@ -109,6 +111,7 @@ final class ScenarioKitTests: XCTestCase {
         XCTAssertEqual(storyboard.fixtures.count, 1)
         XCTAssertEqual(storyboard.fixtures.first?.id, "EVT-001")
         XCTAssertTrue(storyboard.timeline.first?.headline.lowercased().contains("https") ?? false)
+        XCTAssertFalse(storyboard.fixtures.first?.matchedRules?.isEmpty ?? true)
     }
 
     func testExampleStoryboardRendersAndInjectsData() throws {

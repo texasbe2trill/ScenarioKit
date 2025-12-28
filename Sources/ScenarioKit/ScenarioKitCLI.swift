@@ -107,7 +107,7 @@ struct StoryboardImportEvents: ParsableCommand {
         let html = try StoryboardHTMLRenderer.render(
             storyboard: storyboard,
             theme: theme == .light ? .light : .dark,
-            kind: .draft("Imported macOS Events"),
+            kind: .draft("Sigma matches"),
             maxFixtures: maxEvents
         )
         print("▸ Writing output...")

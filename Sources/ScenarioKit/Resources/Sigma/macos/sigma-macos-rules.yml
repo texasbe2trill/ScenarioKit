@@ -1,0 +1,34 @@
+---
+title: macOS Curl Network Activity
+id: MACOS_Curl_Network
+status: experimental
+description: Detects curl network usage observed in process telemetry
+logsource:
+  product: macos
+detection:
+  selection:
+    process|contains: curl
+    subsystem|contains: network
+  condition: selection
+---
+title: macOS TCC Prompt Activity
+id: MACOS_TCC_Prompt
+status: experimental
+description: Detects macOS Transparency, Consent, and Control (TCC) prompts
+logsource:
+  product: macos
+detection:
+  selection:
+    subsystem|contains: com.apple.tcc
+  condition: selection
+---
+title: macOS LaunchAgent Persistence Artifact
+id: MACOS_LaunchAgent_Write
+status: experimental
+description: Detects LaunchAgent/LaunchDaemon artifacts in messages
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains: launchagent
+  condition: selection

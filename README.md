@@ -12,7 +12,7 @@ swift build
 
 ## What ScenarioKit is
 - macOS security storyboard generator (offline HTML)
-- Works with curated storyboard YAML and with raw macOS event exports
+- Works with curated storyboard YAML and with raw macOS event exports (filtered + Sigma-matched)
 - Single-file HTML output ready for tickets, briefs, or postmortems
 
 ## Quickstart: macOS logs → storyboard
@@ -31,6 +31,7 @@ log show --last 15m --style json \
 }]' > macos_events.json
 
 swift run scenariokit storyboard import-events macos_events.json --open
+# Notes: import-events applies noise filtering and bundled macOS Sigma rules; only matching events are kept.
 ```
 
 High-signal TCC example:
@@ -40,6 +41,7 @@ log show --last 60m --style json --predicate 'subsystem == "com.apple.TCC"' \
 > tcc_events.json
 
 swift run scenariokit storyboard import-events tcc_events.json --open
+# Notes: if no Sigma rule matches, the HTML will be sparse/empty.
 ```
 
 Curated storyboard (reviewed, shareable):
@@ -64,8 +66,10 @@ swift run scenariokit storyboard render examples/storyboard_macos_example.yaml -
 - `--open`: open the generated HTML on macOS
 
 Notes:
-- No “enterprise/basic” YAML profiles are used; the inputs are either event exports or full storyboard docs.
-- Event import applies light noise filtering to drop chatty macOS background subsystems and keep security-relevant signals (curl/TCC/persistence/credential hints).
+- Event import applies noise filtering to drop chatty macOS background subsystems and keep security-relevant signals (curl/TCC/persistence/credential hints).
+- Bundled macOS Sigma rules are applied during `import-events`; only events that match at least one Sigma rule are kept and annotated in the HTML (fixtures show “Sigma: <rule ids>”).
+- Coverage treats Sigma matches as “passing”; expect coverage to drop to 0 if nothing matches.
+- Large Unified Log exports can be very noisy; prefer predicates (e.g., `subsystem == "com.apple.TCC"`) before import.
  
 ## Examples
 - macOS storyboard (curated): `examples/storyboard_macos_example.yaml`

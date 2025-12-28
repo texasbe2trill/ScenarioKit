@@ -74,8 +74,9 @@ enum StoryboardHTMLRenderer {
                         expected: fixture.expected ?? [],
                         result: fixture.result ?? "unknown",
                         preview: preview.preview,
-                        full: preview.full,
-                        truncated: preview.truncated
+                      full: preview.full,
+                      truncated: preview.truncated,
+                      matchedRules: fixture.matchedRules ?? []
                     )
                 },
             fixtureTotal: storyboard.fixtures.count,
@@ -242,6 +243,7 @@ private struct FixtureData: Codable {
     let preview: String
     let full: String
     let truncated: Bool
+    let matchedRules: [String]
 }
 
 private let commonScript = #"""
@@ -391,7 +393,10 @@ function uniqueTechniques(rules){
 }
 
 function passingFixtures(fixtures){
-  return (fixtures||[]).filter(f => (f.result||"").toLowerCase() === "pass").length;
+  return (fixtures||[]).filter(f => {
+    const res = (f.result||"").toLowerCase();
+    return res === "pass" || res === "match";
+  }).length;
 }
 
 function renderFixtures(fixtures, shown, total){
@@ -416,7 +421,7 @@ function renderFixtures(fixtures, shown, total){
       const f = fixtures[i];
       const box = document.createElement("div");
       box.className = "item";
-      box.dataset.search = `${f.id} ${(f.expected||[]).join(" ")} ${(f.preview||"")}`.toLowerCase();
+      box.dataset.search = `${f.id} ${(f.expected||[]).join(" ")} ${(f.preview||"")} ${(f.matchedRules||[]).join(" ")}`.toLowerCase();
       const code = document.createElement("pre");
       code.className = "code";
       code.textContent = f.preview || "{}";
@@ -428,12 +433,16 @@ function renderFixtures(fixtures, shown, total){
       });
       const head = document.createElement("div");
       head.className = "itemhead";
+      const sigmaBadge = (f.matchedRules||[]).length ? `<div class="badge">Sigma: ${(f.matchedRules||[]).join(", ")}</div>` : "";
       head.innerHTML = `
         <div>
           <div><strong>${escapeHtml(f.id)}</strong></div>
           <div class="subtitle mono">Expected: ${(f.expected||[]).join(", ") || "none"}</div>
         </div>
-        <div class="badge">${(f.result||"unknown").toUpperCase()}</div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+          ${sigmaBadge}
+          <div class="badge">${(f.result||"unknown").toUpperCase()}</div>
+        </div>
       `;
       box.appendChild(head);
       box.appendChild(code);
@@ -715,7 +724,7 @@ private let lightTemplate = #"""
       <section id="view-timeline" class="grid hidden">
         <div class="card">
           <h2>Timeline</h2>
-          <div class="box">A chronological narrative: what was observed, in what order, with brief explanations.</div>
+          <div class="box" id="timelineIntro"></div>
           <div id="timelineList" style="margin-top:12px; display:flex; flex-direction:column; gap:10px;"></div>
         </div>
       </section>
@@ -724,7 +733,7 @@ private let lightTemplate = #"""
       <section id="view-rules" class="grid hidden">
         <div class="card">
           <h2>Rules</h2>
-          <div class="box">Each rule should be readable without YAML. Show match logic + plain-English explanation.</div>
+          <div class="box" id="rulesIntro"></div>
           <div id="rulesFull" style="margin-top:12px; display:flex; flex-direction:column; gap:10px;"></div>
         </div>
       </section>
@@ -733,7 +742,7 @@ private let lightTemplate = #"""
       <section id="view-actions" class="grid hidden">
         <div class="card">
           <h2>Actions</h2>
-          <div class="box">Step-by-step checklists, calm wording, platform-neutral.</div>
+          <div class="box" id="actionsIntro"></div>
           <div id="actionsFull" style="margin-top:12px; display:flex; flex-direction:column; gap:10px;"></div>
         </div>
       </section>
@@ -742,7 +751,7 @@ private let lightTemplate = #"""
       <section id="view-tests" class="grid hidden">
         <div class="card">
           <h2>Tests</h2>
-          <div class="box">Fixtures validate intent. They prevent regressions and build trust in community contributions.</div>
+          <div class="box" id="testsIntro"></div>
           <input id="fixtureSearch" class="input" placeholder="Search fixtures..." style="margin-top:10px; width:100%; padding:8px; border-radius:10px; border:2px solid var(--line);" />
           <div id="fixturesFull" style="margin-top:12px; display:flex; flex-direction:column; gap:10px;"></div>
         </div>

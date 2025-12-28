@@ -19,19 +19,34 @@ enum EventImport {
             throw ScenarioKitError.unsupportedEventsImport
         }
 
-        let events = filterNoise(from: rawEvents)
+        let noiseFiltered = filterNoise(from: rawEvents)
 
-        if events.isEmpty {
+        if noiseFiltered.isEmpty {
             fputs("⚠️  storyboard import: all events filtered as noise; check input predicates or broaden filters.\n", stderr)
-        } else if events.count < rawEvents.count {
-            fputs("ℹ️  storyboard import: filtered \(rawEvents.count - events.count) noisy events (kept \(events.count) of \(rawEvents.count)).\n", stderr)
+        } else if noiseFiltered.count < rawEvents.count {
+            fputs("ℹ️  storyboard import: filtered \(rawEvents.count - noiseFiltered.count) noisy events (kept \(noiseFiltered.count) of \(rawEvents.count)).\n", stderr)
         }
 
-        let tags = detectTags(from: events)
-        let signals = detectSignals(from: events)
+        let sigmaEngine = SigmaMatcher.shared
+        let matchedTuples: [(event: YAMLValue, matches: [String])]
+        if let sigmaEngine {
+            let results = sigmaEngine.match(events: noiseFiltered)
+            matchedTuples = results
+            if results.isEmpty {
+                fputs("⚠️  sigma: no events matched bundled macOS Sigma rules; HTML may be empty.\n", stderr)
+            } else if results.count < noiseFiltered.count {
+                fputs("ℹ️  sigma: kept \(results.count) of \(noiseFiltered.count) events that matched Sigma macOS rules.\n", stderr)
+            }
+        } else {
+            matchedTuples = noiseFiltered.map { ($0, []) }
+        }
+
+        let matchedEvents = matchedTuples.map { $0.event }
+        let tags = detectTags(from: matchedEvents)
+        let signals = detectSignals(from: matchedEvents)
 
         let maxTimelineItems = 100
-        var timeline = events
+        var timeline = matchedTuples.map { $0.event }
             .prefix(maxTimelineItems)
             .enumerated()
             .map { idx, val in timelineItem(for: val, index: idx) }
@@ -48,12 +63,13 @@ enum EventImport {
             ]
         }
 
-        let fixtures: [StoryboardDocument.Fixture] = events.enumerated().map { idx, val in
+        let fixtures: [StoryboardDocument.Fixture] = matchedTuples.enumerated().map { idx, tuple in
             StoryboardDocument.Fixture(
                 id: String(format: "EVT-%03d", idx + 1),
-                expected: [],
-                result: "unknown",
-                event: val
+                expected: tuple.matches.isEmpty ? [] : tuple.matches,
+                result: tuple.matches.isEmpty ? "unknown" : "match",
+                event: tuple.event,
+                matchedRules: tuple.matches
             )
         }
 
@@ -72,7 +88,24 @@ enum EventImport {
 
         let actions = buildActions(tags: tags, hasHigh: timeline.contains { ($0.severity ?? .medium) == .high || ($0.severity ?? .medium) == .critical })
 
-        let rules = generateRules(from: events, tags: tags)
+        let matchedRuleIDs = Set(matchedTuples.flatMap { $0.matches })
+        let rules: [StoryboardDocument.Rule]
+        if let sigmaEngine {
+            let sigmaRules = sigmaEngine.rules(for: matchedRuleIDs)
+            rules = sigmaRules.map { r in
+                StoryboardDocument.Rule(
+                    id: r.id,
+                    title: r.title,
+                    severity: .medium,
+                    techniques: [],
+                    explanation: r.description,
+                    match: [StoryboardDocument.RuleMatch(ok: true, text: r.condition)]
+                )
+            }
+        } else {
+            rules = generateRules(from: matchedEvents, tags: tags)
+        }
+
         let ruleIDs = rules.map { $0.id }
 
         let fixturesWithExpected = fixtures.map { fixture -> StoryboardDocument.Fixture in
@@ -81,7 +114,8 @@ enum EventImport {
                 id: fixture.id,
                 expected: expected.isEmpty ? fixture.expected : expected,
                 result: fixture.result,
-                event: fixture.event
+                event: fixture.event,
+                matchedRules: fixture.matchedRules
             )
         }
 
