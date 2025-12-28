@@ -1,5 +1,5 @@
 # ScenarioKit
-ScenarioKit is a SwiftPM CLI for macOS security storyboards: validate YAML, analyze dependencies, and generate polished offline HTML briefings from curated scenarios or raw macOS event data.
+ScenarioKit is a SwiftPM CLI for macOS security storyboards: take macOS logs (Unified Logs JSON, EDR exports), turn them into an offline HTML briefing with timeline, starter rules, actions, and fixtures.
 
 ## Requirements
 - macOS with Swift 6 (Xcode 15.3 or later)
@@ -15,64 +15,70 @@ swift build
 - Works with curated storyboard YAML and with raw macOS event exports
 - Single-file HTML output ready for tickets, briefs, or postmortems
 
-## Quickstart: macOS logs → YAML → storyboard
-Assumes `jq` and `yq` installed (brew install jq yq).
+## Quickstart: macOS logs → storyboard
+Assumes `jq` installed (`brew install jq`).
 
-TCC-focused events:
+General Unified Logs to storyboard:
 ```sh
-log show --last 30m --style json \
-  --predicate 'subsystem == "com.apple.TCC"' \
-| jq -c '{ timestamp, process, subsystem, category, eventMessage, senderImagePath, user: (user // null) }' \
-| yq -P > macos_events.yaml
+log show --last 15m --style json \
+| jq '[.[] | {
+  timestamp: .timestamp,
+  process: .process,
+  subsystem: .subsystem,
+  category: .category,
+  eventMessage: .eventMessage,
+  senderImagePath: .senderImagePath
+}]' > macos_events.json
 
-swift run scenariokit storyboard import-events macos_events.yaml --open
+swift run scenariokit storyboard import-events macos_events.json --open
 ```
 
-LaunchAgents / persistence keywords:
+High-signal TCC example:
 ```sh
-log show --last 2h --style json \
-| jq -c 'select(.eventMessage? | test("LaunchAgents|LaunchDaemons|launchd|plist"; "i")) |
-        { timestamp, process, subsystem, category, eventMessage, senderImagePath }' \
-| yq -P > persistence_events.yaml
+log show --last 60m --style json --predicate 'subsystem == "com.apple.TCC"' \
+| jq '[.[] | { timestamp, process, subsystem, category, eventMessage, senderImagePath }]' \
+> tcc_events.json
 
-swift run scenariokit storyboard import-events persistence_events.yaml --open
+swift run scenariokit storyboard import-events tcc_events.json --open
 ```
 
 Curated storyboard (reviewed, shareable):
 ```sh
-swift run scenariokit storyboard render examples/storyboard_macos.yaml --open
+swift run scenariokit storyboard render examples/storyboard_macos_example.yaml --open
 ```
 
-Dependency analysis (non-storyboard):
-```sh
-swift run scenariokit analyze examples/basic.yaml
-swift run scenariokit report examples/enterprise.yaml --out report.html
-```
+## CLI usage
+`swift run scenariokit storyboard render <path>`
+- `path` (required): storyboard YAML or JSON
+- `--out <file>`: output HTML path (default `storyboard.html`)
+- `--theme light|dark`: theme (default dark)
+- `--max-events <N>`: cap embedded fixtures (default 200)
+- `--open`: open the generated HTML on macOS
 
-## CLI summary
-- `validate <path>`: Load and validate a scenario YAML (`--strict` to treat warnings as errors).
-- `analyze <path>`: Decode scenario YAML, summarize services, output text or JSON (`--format text|json`, `--output <file>`).
-- `report <path>`: Dependency report HTML or JSON (`--format html|json`, `--out <file>`, `--open`).
-- `storyboard render <path>`: Render storyboard HTML (`--theme light|dark`, `--out <file>`, `--open`).
-- `storyboard import-events <path>`: Convert macOS events YAML to a storyboard draft and render (`--name <scenario>`, `--theme light|dark`, `--out <file>`, `--open`).
+`swift run scenariokit storyboard import-events <path>`
+- `path` (required): events YAML/JSON (top-level array or `events`/`items` array)
+- `--name <string>`: override scenario name
+- `--out <file>`: output HTML path (default `storyboard.html`)
+- `--theme light|dark`: theme (default dark)
+- `--max-events <N>`: cap embedded fixtures (default 200)
+- `--open`: open the generated HTML on macOS
 
+Notes:
+- No “enterprise/basic” YAML profiles are used; the inputs are either event exports or full storyboard docs.
+- Event import applies light noise filtering to drop chatty macOS background subsystems and keep security-relevant signals (curl/TCC/persistence/credential hints).
+ 
 ## Examples
-- Basic scenario: `examples/basic.yaml`
-- Enterprise scenario: `examples/enterprise.yaml`
-- macOS storyboard (curated): `examples/storyboard_macos.yaml`
-- macOS events import: `examples/macos_events.yaml`
+- macOS storyboard (curated): `examples/storyboard_macos_example.yaml`
+- macOS events import (YAML/JSON): `examples/macos_events_example.yaml`, `examples/macos_events_example.json`
+- TCC-focused events (JSON): `examples/tcc_events.json`
 
 ## Output philosophy
 - Single-file HTML (inline CSS/JS), offline, Safari-friendly
 - Deterministic ordering for repeatable runs
 - No external services or network fetches
 
+> Generated storyboard HTML (e.g., `storyboard.html` or `*.storyboard.html`) is a build artifact—do not commit it.
+
 ## Development
 - Build: `swift build`
 - Tests: `swift test`
-
-Generate a report:
-
-```sh
-swift run scenariokit report examples/enterprise.yaml --out report.html --open
-```

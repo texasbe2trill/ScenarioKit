@@ -1,0 +1,50 @@
+[
+  {
+    "timestamp": "2025-12-28T14:03:12Z",
+    "host": "MBP-CHRIS",
+    "user": "chris",
+    "process": "Terminal",
+    "pid": 9123,
+    "event_type": "process_start",
+    "subsystem": "com.apple.securityd",
+    "message": "User launched zsh via Terminal",
+    "severity": "info",
+    "tags": ["execution", "interactive"]
+  },
+  {
+    "timestamp": "2025-12-28T14:04:01Z",
+    "host": "MBP-CHRIS",
+    "user": "chris",
+    "process": "curl",
+    "pid": 9188,
+    "event_type": "network_connection",
+    "subsystem": "com.apple.network",
+    "message": "Outbound HTTPS request to api.example.com:443",
+    "severity": "low",
+    "tags": ["network", "egress"]
+  },
+  {
+    "timestamp": "2025-12-28T14:05:44Z",
+    "host": "MBP-CHRIS",
+    "user": "chris",
+    "process": "osascript",
+    "pid": 9301,
+    "event_type": "persistence_attempt",
+    "subsystem": "com.apple.launchservices",
+    "message": "Attempted to register a login item",
+    "severity": "medium",
+    "tags": ["persistence", "launchagent"]
+  },
+  {
+    "timestamp": "2025-12-28T14:07:10Z",
+    "host": "MBP-CHRIS",
+    "user": "chris",
+    "process": "security",
+    "pid": 9440,
+    "event_type": "credential_access",
+    "subsystem": "com.apple.security",
+    "message": "Queried keychain item metadata",
+    "severity": "high",
+    "tags": ["credentials", "keychain"]
+  }
+]

@@ -1,0 +1,118 @@
+version: 1
+build: "example-macos"
+
+scenario:
+  name: "macOS Suspicious Activity Walkthrough"
+  description: "Example storyboard used to validate render + import-events end-to-end."
+  owner: "ScenarioKit Examples"
+  tags: ["macos", "example", "walkthrough"]
+
+severity: medium
+
+signals:
+  - id: process
+    label: "Endpoint Process Telemetry"
+  - id: unified_log
+    label: "macOS Unified Logs"
+
+rules:
+  - id: RULE-IMPORTED-001
+    title: "Draft: Potential persistence via LaunchAgents/Daemons"
+    severity: high
+    techniques: []
+    match:
+      - ok: true
+        text: "event contains LaunchAgent/Daemon or plist writes"
+    explanation: "Draft detection: LaunchAgent/Daemon patterns detected. Review persistence locations."
+  - id: RULE-IMPORTED-002
+    title: "Draft: Outbound network indicator observed"
+    severity: medium
+    techniques: []
+    match:
+      - ok: true
+        text: "event includes IP/URL/domain indicators"
+    explanation: "Draft detection: network indicators present. Review destinations and frequency."
+
+actions:
+  - id: ACT-TRIAGE
+    title: "Initial triage"
+    steps:
+      - "Review event details and origin"
+      - "Collect related host/user context"
+      - "Capture artifacts if suspicious"
+    notes: "Capture evidence: logs, command lines, network destinations, and user context."
+  - id: ACT-SCOPING
+    title: "Scope & correlate (macOS)"
+    steps:
+      - "Group events by user/host/IP to find clusters"
+      - "Identify first/last seen times and sequences"
+      - "Pivot on shared indicators (hashes, domains, roles)"
+    notes: "Capture for report: timestamps, user/host pairs, indicator list."
+
+timeline:
+  - time: "2025-12-28T14:03:12Z"
+    headline: "User launched zsh via Terminal"
+    detail: "user=chris · host=MBP-CHRIS · proc=Terminal · subsystem=com.apple.securityd"
+    severity: low
+  - time: "2025-12-28T14:04:01Z"
+    headline: "Outbound HTTPS request to api.example.com:443"
+    detail: "user=chris · host=MBP-CHRIS · proc=curl · subsystem=com.apple.network"
+    severity: medium
+  - time: "2025-12-28T14:05:44Z"
+    headline: "Attempted to register a login item"
+    detail: "user=chris · host=MBP-CHRIS · proc=osascript · subsystem=com.apple.launchservices"
+    severity: medium
+  - time: "2025-12-28T14:07:10Z"
+    headline: "Queried keychain item metadata"
+    detail: "user=chris · host=MBP-CHRIS · proc=security · subsystem=com.apple.security"
+    severity: high
+
+fixtures:
+  - id: EVT-001
+    expected: []
+    result: unknown
+    event:
+      timestamp: "2025-12-28T14:03:12Z"
+      host: "MBP-CHRIS"
+      user: "chris"
+      process: "Terminal"
+      event_type: "process_start"
+      subsystem: "com.apple.securityd"
+      message: "User launched zsh via Terminal"
+      tags: ["execution", "interactive"]
+  - id: EVT-002
+    expected: []
+    result: unknown
+    event:
+      timestamp: "2025-12-28T14:04:01Z"
+      host: "MBP-CHRIS"
+      user: "chris"
+      process: "curl"
+      event_type: "network_connection"
+      subsystem: "com.apple.network"
+      message: "Outbound HTTPS request to api.example.com:443"
+      tags: ["network", "egress"]
+  - id: EVT-003
+    expected: []
+    result: unknown
+    event:
+      timestamp: "2025-12-28T14:05:44Z"
+      host: "MBP-CHRIS"
+      user: "chris"
+      process: "osascript"
+      event_type: "persistence_attempt"
+      subsystem: "com.apple.launchservices"
+      message: "Attempted to register a login item"
+      tags: ["persistence", "launchagent"]
+  - id: EVT-004
+    expected: []
+    result: unknown
+    event:
+      timestamp: "2025-12-28T14:07:10Z"
+      host: "MBP-CHRIS"
+      user: "chris"
+      process: "security"
+      event_type: "credential_access"
+      subsystem: "com.apple.security"
+      message: "Queried keychain item metadata"
+      tags: ["credentials", "keychain"]

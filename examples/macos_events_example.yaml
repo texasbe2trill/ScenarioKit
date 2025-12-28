@@ -1,0 +1,27 @@
+- timestamp: "2025-03-08T18:42:11Z"
+  process: Terminal
+  subsystem: com.apple.TCC
+  category: Access
+  eventMessage: Prompting user for access to Desktop folder
+  senderImagePath: /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+
+- timestamp: "2025-03-08T18:42:15Z"
+  process: Terminal
+  subsystem: com.apple.TCC
+  category: Decision
+  eventMessage: User denied access to Desktop folder
+  senderImagePath: /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+
+- timestamp: "2025-03-08T18:44:08Z"
+  process: curl
+  subsystem: com.apple.network
+  category: Network
+  eventMessage: Outgoing HTTPS connection to example.com
+  senderImagePath: /usr/bin/curl
+
+- timestamp: "2025-03-08T18:44:15Z"
+  process: bash
+  subsystem: com.apple.shell
+  category: Execution
+  eventMessage: Executed script via bash -c
+  senderImagePath: /bin/bash

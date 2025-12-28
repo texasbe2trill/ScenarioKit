@@ -3,15 +3,15 @@ import Yams
 
 enum EventImport {
     static func importEvents(from anyYAML: YAMLValue, sourceName: String?) throws -> StoryboardDocument {
-        let events: [YAMLValue]
+        let rawEvents: [YAMLValue]
         switch anyYAML {
         case .array(let arr):
-            events = arr
+            rawEvents = arr
         case .object(let dict):
             if let ev = dict["events"], case .array(let arr) = ev {
-                events = arr
+                rawEvents = arr
             } else if let items = dict["items"], case .array(let arr) = items {
-                events = arr
+                rawEvents = arr
             } else {
                 throw ScenarioKitError.unsupportedEventsImport
             }
@@ -19,20 +19,33 @@ enum EventImport {
             throw ScenarioKitError.unsupportedEventsImport
         }
 
+        let events = filterNoise(from: rawEvents)
+
+        if events.isEmpty {
+            fputs("⚠️  storyboard import: all events filtered as noise; check input predicates or broaden filters.\n", stderr)
+        } else if events.count < rawEvents.count {
+            fputs("ℹ️  storyboard import: filtered \(rawEvents.count - events.count) noisy events (kept \(events.count) of \(rawEvents.count)).\n", stderr)
+        }
+
         let tags = detectTags(from: events)
         let signals = detectSignals(from: events)
 
-        let timeline = events.prefix(12).enumerated().map { idx, val -> StoryboardDocument.TimelineItem in
-            let headline = headlineFor(event: val) ?? "Event \(idx + 1)"
-            let detail = detailFor(event: val)
-            let time = timeFor(event: val)
-            let severity = severityFor(event: val)
-            return StoryboardDocument.TimelineItem(
-                time: time,
-                headline: headline,
-                detail: detail,
-                severity: severity
-            )
+        let maxTimelineItems = 100
+        var timeline = events
+            .prefix(maxTimelineItems)
+            .enumerated()
+            .map { idx, val in timelineItem(for: val, index: idx) }
+
+        if timeline.isEmpty {
+            fputs("⚠️  storyboard import: no timeline items built from events; inserting placeholder.\\n", stderr)
+            timeline = [
+                StoryboardDocument.TimelineItem(
+                    time: "—",
+                    headline: "No events loaded",
+                    detail: "Import produced no timeline entries",
+                    severity: .low
+                )
+            ]
         }
 
         let fixtures: [StoryboardDocument.Fixture] = events.enumerated().map { idx, val in
@@ -93,12 +106,60 @@ enum EventImport {
         )
     }
 
+    private static func timelineItem(for event: YAMLValue, index: Int) -> StoryboardDocument.TimelineItem {
+        let headline = headlineFor(event: event) ?? fallbackHeadline(for: event, index: index)
+        let detail = detailFor(event: event) ?? fallbackDetail(for: event, headline: headline)
+        let time = timeFor(event: event)
+        let severity = severityFor(event: event)
+        return StoryboardDocument.TimelineItem(
+            time: time,
+            headline: headline,
+            detail: detail,
+            severity: severity
+        )
+    }
+
+    private static func fallbackHeadline(for event: YAMLValue, index: Int) -> String {
+        if case .object(let dict) = event {
+            let subsystem = string(for: ["subsystem"], in: dict)
+            let category = string(for: ["category"], in: dict)
+            let combined = [subsystem, category].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            if !combined.isEmpty {
+                return combined.joined(separator: " / ")
+            }
+        }
+        return "Event \(index + 1)"
+    }
+
+    private static func fallbackDetail(for event: YAMLValue, headline: String) -> String? {
+        guard case .object(let dict) = event else { return headline.isEmpty ? nil : headline }
+        var parts: [String] = []
+        if let subsystem = string(for: ["subsystem"], in: dict) { parts.append("subsystem=\(subsystem)") }
+        if let category = string(for: ["category"], in: dict) { parts.append("category=\(category)") }
+        if let process = string(for: ["process", "image", "exe", "ParentImage", "processName"], in: dict) { parts.append("process=\(process)") }
+        if let user = string(for: ["user", "username", "account", "principal", "userIdentity"], in: dict) { parts.append("user=\(user)") }
+        if let host = string(for: ["host", "hostname", "device", "computer"], in: dict) { parts.append("host=\(host)") }
+        if let ip = string(for: ["ip", "src_ip", "sourceIPAddress"], in: dict) { parts.append("ip=\(ip)") }
+        if !parts.isEmpty { return parts.joined(separator: " · ") }
+        return headline.isEmpty ? nil : headline
+    }
+
+    private static func string(for keys: [String], in dict: [String: YAMLValue]) -> String? {
+        for key in keys {
+            if let value = dict[key], case .string(let s) = value {
+                let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+        }
+        return nil
+    }
+
     private static func headlineFor(event: YAMLValue) -> String? {
         guard case .object(let dict) = event else { return nil }
-        let keys = ["headline", "message", "title", "eventName", "action", "summary"]
+        let keys = ["headline", "eventMessage", "message", "title", "eventName", "action", "summary"]
         for key in keys {
-            if let value = dict[key], case .string(let s) = value, !s.isEmpty {
-                return String(s.prefix(90))
+            if let value = dict[key], case .string(let s) = value, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return String(s.prefix(140))
             }
         }
         return nil
@@ -113,17 +174,21 @@ enum EventImport {
         if let host = dict["host"] ?? dict["hostname"] ?? dict["device"] ?? dict["computer"], case .string(let s) = host { parts.append("host=\(s)") }
         if let proc = dict["process"] ?? dict["image"] ?? dict["exe"] ?? dict["ParentImage"], case .string(let s) = proc { parts.append("proc=\(s)") }
         if let target = dict["dst"] ?? dict["resource"] ?? dict["url"] ?? dict["domain"], case .string(let s) = target { parts.append("target=\(s)") }
+        if let subsystem = dict["subsystem"], case .string(let s) = subsystem, !s.isEmpty { parts.append("subsystem=\(s)") }
+        if let category = dict["category"], case .string(let s) = category, !s.isEmpty { parts.append("category=\(s)") }
+        if let msg = dict["eventMessage"], case .string(let s) = msg, parts.isEmpty {
+            return String(s.prefix(160))
+        }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private static func timeFor(event: YAMLValue) -> String {
         guard case .object(let dict) = event else { return "—" }
-        let keys = ["time", "timestamp", "ts", "datetime", "eventTime", "@timestamp"]
+        let keys = ["timestamp", "time", "ts", "datetime", "eventTime", "@timestamp"]
         for key in keys {
             if let value = dict[key] {
                 if case .string(let s) = value {
-                    if let hhmm = extractTime(from: s) { return hhmm }
-                    return s
+                    return s.trimmingCharacters(in: .whitespacesAndNewlines)
                 }
                 if case .int(let i) = value { return formatEpoch(TimeInterval(i)) }
                 if case .double(let d) = value { return formatEpoch(TimeInterval(d)) }
@@ -132,26 +197,10 @@ enum EventImport {
         return "—"
     }
 
-    private static func extractTime(from string: String) -> String? {
-        let isoSeparators: [Character] = ["T", " "]
-        for sep in isoSeparators {
-            if let range = string.split(separator: sep).last {
-                let timePart = range.split(separator: "+").first?.split(separator: "Z").first ?? range[...]
-                let comps = timePart.split(separator: ":")
-                if comps.count >= 2 {
-                    return comps.prefix(3).joined(separator: ":")
-                }
-            }
-        }
-        return nil
-    }
-
     private static func formatEpoch(_ value: TimeInterval) -> String {
         let date = Date(timeIntervalSince1970: value)
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "HH:mm:ss"
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: date)
     }
 
@@ -187,6 +236,56 @@ enum EventImport {
             }.joined(separator: " ")
         }
     }
+
+    private static func filterNoise(from events: [YAMLValue]) -> [YAMLValue] {
+        var dedupe: [String: Int] = [:]
+        var kept: [YAMLValue] = []
+
+        for event in events {
+            guard case .object(let dict) = event else {
+                kept.append(event); continue
+            }
+
+            let message = string(for: ["eventMessage", "message", "summary", "title"], in: dict)?.lowercased() ?? ""
+            let process = string(for: ["process", "image", "exe", "ParentImage", "processName"], in: dict)?.lowercased() ?? ""
+            let subsystem = string(for: ["subsystem", "system"], in: dict)?.lowercased() ?? ""
+            let category = string(for: ["category"], in: dict)?.lowercased() ?? ""
+
+            let text = (message + " " + process + " " + subsystem + " " + category)
+            let hasKeyword = interestingKeywords.contains { text.contains($0) }
+            let noisySubsystem = noiseSubsystems.contains(subsystem)
+            let noisyProcess = noiseProcesses.contains(process)
+
+            if !hasKeyword && message.isEmpty && noisySubsystem { continue }
+            if !hasKeyword && noisyProcess && message.count < 6 { continue }
+
+            let dedupeKey = "\(process)|\(subsystem)|\(message)"
+            let seen = dedupe[dedupeKey, default: 0]
+            if seen >= 3 && !hasKeyword { continue }
+            dedupe[dedupeKey] = seen + 1
+
+            kept.append(event)
+        }
+
+        return kept
+    }
+
+    private static let interestingKeywords: [String] = [
+        "curl", "wget", "http", "https", "download", "egress", "network", "dns", "connection", "connect",
+        "tcc", "privacy", "prompt", "denied", "allow", "keychain", "credential", "auth", "authentication",
+        "launchagent", "launchdaemon", "plist", "persistence", "loginitem", "launchd",
+        "sudo", "root", "elevated", "malware", "xprotect", "quarantine", "notarized", "unsigned"
+    ]
+
+    private static let noiseSubsystems: Set<String> = [
+        "com.apple.runningboard", "com.apple.locationd", "com.apple.audio", "com.apple.imfoundation", "com.apple.wifi",
+        "com.apple.coremedia", "com.apple.coretelephony", "com.apple.multipeerconnectivity", "com.apple.backboardd"
+    ]
+
+    private static let noiseProcesses: Set<String> = [
+        "rapportd", "sharingd", "bird", "cloudd", "trustd", "mds", "mdworker", "mds_stores", "WindowServer",
+        "logd", "syslogd", "cfprefsd", "distnoted", "UserEventAgent"
+    ]
 
     private static func detectTags(from events: [YAMLValue]) -> Set<String> {
         var tags: Set<String> = ["macos", "imported"]
@@ -403,32 +502,5 @@ enum EventImport {
             }
         }
         return matched
-    }
-}
-
-extension EventImport {
-    static func parseYAML(_ text: String) throws -> YAMLValue {
-        let any = try Yams.load(yaml: text)
-        return convert(any)
-    }
-
-    private static func convert(_ value: Any?) -> YAMLValue {
-        guard let value else { return .null }
-        switch value {
-        case let s as String: return .string(s)
-        case let b as Bool: return .bool(b)
-        case let i as Int: return .int(i)
-        case let d as Double: return .double(d)
-        case let arr as [Any]:
-            return .array(arr.map { convert($0) })
-        case let dict as [String: Any]:
-            var mapped: [String: YAMLValue] = [:]
-            for key in dict.keys.sorted() {
-                mapped[key] = convert(dict[key])
-            }
-            return .object(mapped)
-        default:
-            return .string(String(describing: value))
-        }
     }
 }

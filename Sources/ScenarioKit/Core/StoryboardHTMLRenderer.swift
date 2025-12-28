@@ -18,9 +18,11 @@ enum StoryboardHTMLRenderer {
         }
     }
 
-    static func render(storyboard: StoryboardDocument, theme: Theme, kind: RenderKind) throws -> String {
+    static func render(storyboard: StoryboardDocument, theme: Theme, kind: RenderKind, maxFixtures: Int) throws -> String {
         let generatedAt = ISO8601DateFormatter().string(from: Date())
         let computedSeverity = effectiveSeverity(for: storyboard)
+
+        let limitedFixtures = Array(storyboard.fixtures.prefix(maxFixtures))
 
         let storyData = StoryData(
             version: storyboard.version ?? 1,
@@ -63,26 +65,62 @@ enum StoryboardHTMLRenderer {
             timeline: storyboard.timeline.map {
                 TimelineData(time: $0.time ?? "", headline: $0.headline, detail: $0.detail ?? "", severity: $0.severity?.rawValue)
             },
-            fixtures: storyboard.fixtures
+            fixtures: limitedFixtures
                 .sorted { $0.id < $1.id }
-                .map { FixtureData(id: $0.id, expected: $0.expected ?? [], result: $0.result, event: $0.event) }
+                .map { fixture in
+                    let preview = previewText(for: fixture.event)
+                    return FixtureData(
+                        id: fixture.id,
+                        expected: fixture.expected ?? [],
+                        result: fixture.result ?? "unknown",
+                        preview: preview.preview,
+                        full: preview.full,
+                        truncated: preview.truncated
+                    )
+                },
+            fixtureTotal: storyboard.fixtures.count,
+            fixtureShown: limitedFixtures.count
         )
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(storyData)
-        guard var json = String(data: data, encoding: .utf8) else {
+        guard let json = String(data: data, encoding: .utf8) else {
             throw ScenarioKitError.jsonEncodingFailed(underlying: CocoaError(.coderInvalidValue))
         }
-        json = json.replacingOccurrences(of: "</script>", with: "<\\/script>")
 
         let base = template(for: theme)
-        let html = base
-            .replacingOccurrences(of: "__STORY_DATA__", with: json)
-            .replacingOccurrences(of: "__SCRIPT__", with: commonScript)
+        let scriptSafeJSON = json.replacingOccurrences(of: "</script>", with: "<\\/script>")
+        let injected = try injectStoryJSON(scriptSafeJSON, into: base)
+        let html = injected.replacingOccurrences(of: "__SCRIPT__", with: commonScript)
+
+        #if DEBUG
+        fputs("storyboard payload bytes=\(json.utf8.count)\n", stderr)
+        #endif
 
         return html
     }
+
+      private static func injectStoryJSON(_ json: String, into template: String) throws -> String {
+        let startToken = "/* SCENARIOKIT_DATA_START */"
+        let endToken = "/* SCENARIOKIT_DATA_END */"
+
+        guard let startRange = template.range(of: startToken),
+            let endRange = template.range(of: endToken),
+            startRange.upperBound <= endRange.lowerBound else {
+          return template.replacingOccurrences(of: "__SCENARIOKIT_STORY_JSON__", with: json)
+        }
+
+        var html = template
+        let payload = """
+    \(startToken)
+    window.__SCENARIOKIT__ = \(json);
+    \(endToken)
+    """
+        html.replaceSubrange(startRange.lowerBound..<endRange.upperBound, with: payload)
+        return html
+      }
 
     private static func effectiveSeverity(for storyboard: StoryboardDocument) -> StoryboardDocument.Severity {
         if let explicit = storyboard.severity {
@@ -92,6 +130,44 @@ enum StoryboardHTMLRenderer {
         return storyboard.rules.reduce(StoryboardDocument.Severity.medium) { current, rule in
             return (rank[rule.severity] ?? 1) > (rank[current] ?? 1) ? rule.severity : current
         }
+    }
+
+    private static func previewText(for event: YAMLValue?) -> (preview: String, full: String, truncated: Bool) {
+        guard let event else { return ("{}", "{}", false) }
+        let previewDict = selectPreviewFields(from: event)
+        let previewJSON = toJSONString(previewDict, pretty: true, limit: 500)
+        let fullJSON = toJSONString(event, pretty: true, limit: 4000)
+        let truncated = fullJSON.hasSuffix("…")
+        return (previewJSON, fullJSON, truncated)
+    }
+
+    private static func selectPreviewFields(from event: YAMLValue) -> YAMLValue {
+        guard case .object(let dict) = event else { return event }
+        var selected: [String: YAMLValue] = [:]
+        let keys = ["eventMessage","message","process","subsystem","category","user","path","senderImagePath","url","domain","ip"]
+        for key in keys {
+            if let val = dict[key] {
+                selected[key] = val
+            }
+        }
+        return .object(selected)
+    }
+
+    private static func toJSONString(_ value: YAMLValue, pretty: Bool, limit: Int) -> String {
+        let encoder = JSONEncoder()
+        if pretty {
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        } else {
+            encoder.outputFormatting = [.sortedKeys]
+        }
+        guard let data = try? encoder.encode(value),
+              var str = String(data: data, encoding: .utf8) else { return "{}" }
+        if str.count > limit {
+            let idx = str.index(str.startIndex, offsetBy: limit)
+            str = String(str[..<idx]) + "…"
+            return str
+        }
+        return str
     }
 
     private static func template(for theme: Theme) -> String {
@@ -115,6 +191,8 @@ private struct StoryData: Codable {
     let actions: [ActionData]
     let timeline: [TimelineData]
     let fixtures: [FixtureData]
+    let fixtureTotal: Int
+    let fixtureShown: Int
 }
 
 private struct ScenarioData: Codable {
@@ -140,11 +218,6 @@ private struct ActionData: Codable {
     let notes: String?
 }
 
-private struct IssueData: Codable {
-    let severity: String
-    let message: String
-}
-
 private struct SignalData: Codable {
     let id: String
     let label: String
@@ -166,20 +239,13 @@ private struct FixtureData: Codable {
     let id: String
     let expected: [String]
     let result: String?
-    let event: YAMLValue?
-}
-
-private extension ScenarioIssue {
-    var severityText: String {
-        switch severity {
-        case .error: return "error"
-        case .warning: return "warning"
-        }
-    }
+    let preview: String
+    let full: String
+    let truncated: Bool
 }
 
 private let commonScript = #"""
-const STORY = JSON.parse(document.getElementById("story-data").textContent || "{}");
+const STORY = window.__SCENARIOKIT__ || {};
 const $ = (sel) => document.querySelector(sel);
 
 function render(){
@@ -306,35 +372,16 @@ function render(){
     af.appendChild(box);
   });
 
-  const ff = $("#fixturesFull"); ff.innerHTML = "";
-  fixtures.forEach(f=>{
-    const eventJSON = JSON.stringify(f.event||{}, null, 2);
-    const box = document.createElement("div");
-    box.className = "item";
-    box.dataset.search = `${f.id} ${(f.expected||[]).join(" ")} ${eventJSON}`.toLowerCase();
-    box.innerHTML = `
-      <div class="itemhead">
-        <div>
-          <div><strong>Fixture ${escapeHtml(f.id)}</strong></div>
-          <div class="subtitle mono">Expected: ${(f.expected||[]).join(", ") || "none"}</div>
-        </div>
-        <div class="badge">${(f.result||"").toUpperCase()}</div>
-      </div>
-      <div class="code">${escapeHtml(eventJSON)}</div>
-    `;
-    ff.appendChild(box);
-  });
-
-  attachFixtureSearch();
+  renderFixtures(fixtures, STORY.fixtureShown || fixtures.length, STORY.fixtureTotal || fixtures.length);
 }
 
 function escapeHtml(s){
   return String(s)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll("\"","&quot;")
-    .replaceAll("'","&#39;");
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/\"/g,"&quot;")
+    .replace(/'/g,"&#39;");
 }
 
 function uniqueTechniques(rules){
@@ -345,6 +392,73 @@ function uniqueTechniques(rules){
 
 function passingFixtures(fixtures){
   return (fixtures||[]).filter(f => (f.result||"").toLowerCase() === "pass").length;
+}
+
+function renderFixtures(fixtures, shown, total){
+  const ff = $("#fixturesFull"); ff.innerHTML = "";
+  const status = document.createElement("div");
+  status.className = "muted";
+  status.textContent = total > shown ? `Showing first ${shown} of ${total} fixtures` : `Fixtures: ${total}`;
+  ff.appendChild(status);
+
+  let rendered = 0;
+  const chunkSize = 100;
+
+  const list = document.createElement("div");
+  list.style.display = "flex";
+  list.style.flexDirection = "column";
+  list.style.gap = "10px";
+  ff.appendChild(list);
+
+  function appendChunk(count){
+    const end = Math.min(rendered + count, fixtures.length);
+    for (let i = rendered; i < end; i++){
+      const f = fixtures[i];
+      const box = document.createElement("div");
+      box.className = "item";
+      box.dataset.search = `${f.id} ${(f.expected||[]).join(" ")} ${(f.preview||"")}`.toLowerCase();
+      const code = document.createElement("pre");
+      code.className = "code";
+      code.textContent = f.preview || "{}";
+      const btn = document.createElement("button");
+      btn.textContent = "Show full event";
+      btn.className = "button";
+      btn.addEventListener("click", ()=>{
+        code.textContent = f.full || f.preview || "{}";
+      });
+      const head = document.createElement("div");
+      head.className = "itemhead";
+      head.innerHTML = `
+        <div>
+          <div><strong>${escapeHtml(f.id)}</strong></div>
+          <div class="subtitle mono">Expected: ${(f.expected||[]).join(", ") || "none"}</div>
+        </div>
+        <div class="badge">${(f.result||"unknown").toUpperCase()}</div>
+      `;
+      box.appendChild(head);
+      box.appendChild(code);
+      box.appendChild(btn);
+      list.appendChild(box);
+    }
+    rendered = end;
+  }
+
+  appendChunk(chunkSize);
+
+  if (fixtures.length > rendered){
+    const more = document.createElement("button");
+    more.textContent = "Load more";
+    more.className = "button";
+    more.addEventListener("click", ()=>{
+      appendChunk(chunkSize);
+      if (rendered >= fixtures.length){
+        more.remove();
+      }
+    });
+    ff.appendChild(more);
+  }
+
+  attachFixtureSearch();
 }
 
 function showTab(tabName){
@@ -377,8 +491,12 @@ document.querySelectorAll(".tab").forEach(t=>{
   });
 });
 
-render();
-showTab("overview");
+document.addEventListener("DOMContentLoaded", ()=>{
+  render();
+  showTab("overview");
+  const prog = document.getElementById("renderProgress");
+  if (prog) prog.style.display = "none";
+});
 """#
 
 private let lightTemplate = #"""
@@ -506,9 +624,31 @@ private let lightTemplate = #"""
       white-space:pre;
       overflow:auto;
     }
+    .button{
+      margin-top:8px;
+      padding:8px 12px;
+      border:2px solid var(--line);
+      border-radius:10px;
+      background:#fff;
+      color:var(--ink);
+      cursor:pointer;
+    }
+    #renderProgress{
+      position:fixed;
+      top:0;
+      left:0;
+      width:100%;
+      padding:10px;
+      background:rgba(255,255,255,0.9);
+      color:#111827;
+      text-align:center;
+      font-size:13px;
+      z-index:9999;
+    }
   </style>
 </head>
 <body>
+  <div id="renderProgress">Rendering storyboard…</div>
   <div class="wrap">
     <header>
       <div class="top">
@@ -615,7 +755,20 @@ private let lightTemplate = #"""
     </main>
   </div>
 
-  <script id="story-data" type="application/json">__STORY_DATA__</script>
+  <script>
+  /* SCENARIOKIT_DATA_START */
+  // SAMPLE DATA (your Swift generator will replace this block)
+  window.__SCENARIOKIT__ = {
+    "scenario": { "name": "Sample Scenario", "description": "Replace at build time" },
+    "rules": [],
+    "actions": [],
+    "signals": [],
+    "timeline": [],
+    "fixtures": [],
+    "version": 1
+  };
+  /* SCENARIOKIT_DATA_END */
+  </script>
   <script>__SCRIPT__</script>
 </body>
 </html>
@@ -746,14 +899,38 @@ private let darkTemplate = #"""
       white-space:pre;
       overflow:auto;
     }
+    .button{
+      margin-top:8px;
+      padding:8px 12px;
+      border:2px solid var(--line);
+      border-radius:10px;
+      background:#0b1220;
+      color:var(--ink);
+      cursor:pointer;
+    }
+    #renderProgress{
+      position:fixed;
+      top:0;
+      left:0;
+      width:100%;
+      padding:10px;
+      background:rgba(17,24,39,0.9);
+      color:#e5e7eb;
+      text-align:center;
+      font-size:13px;
+      z-index:9999;
+    }
   </style>
 </head>
 <body>
+  <div id="renderProgress">Rendering storyboard…</div>
   <div class="wrap">
     <header>
       <div class="top">
         <div>
-          <h1 id="scenarioName">Scenario Name</h1>
+          <div class="row" style="align-items:baseline; gap:8px;">
+            <h1 id="scenarioName">Scenario Name</h1><span class="badge" id="scenarioBadge">Native Scenario</span>
+          </div>
           <div class="subtitle" id="scenarioDesc">One-line description of the scenario. Keep it calm and readable.</div>
           <div class="chips" id="tagChips"></div>
         </div>
@@ -853,7 +1030,20 @@ private let darkTemplate = #"""
     </main>
   </div>
 
-  <script id="story-data" type="application/json">__STORY_DATA__</script>
+  <script>
+  /* SCENARIOKIT_DATA_START */
+  // SAMPLE DATA (your Swift generator will replace this block)
+  window.__SCENARIOKIT__ = {
+    "scenario": { "name": "Sample Scenario", "description": "Replace at build time" },
+    "rules": [],
+    "actions": [],
+    "signals": [],
+    "timeline": [],
+    "fixtures": [],
+    "version": 1
+  };
+  /* SCENARIOKIT_DATA_END */
+  </script>
   <script>__SCRIPT__</script>
 </body>
 </html>

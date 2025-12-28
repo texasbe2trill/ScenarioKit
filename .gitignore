@@ -61,3 +61,8 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 .vscode/launch.json
+storyboard.html
+*.storyboard.html
+/tmp/*.html
+examples/.DS_Store
+.DS_Store
