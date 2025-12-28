@@ -6,7 +6,19 @@ enum StoryboardHTMLRenderer {
         case dark
     }
 
-    static func render(storyboard: StoryboardDocument, theme: Theme) throws -> String {
+    enum RenderKind {
+        case native
+        case draft(String)
+
+        var label: String {
+            switch self {
+            case .native: return "Native Scenario"
+            case .draft(let note): return "Draft (\(note))"
+            }
+        }
+    }
+
+    static func render(storyboard: StoryboardDocument, theme: Theme, kind: RenderKind) throws -> String {
         let generatedAt = ISO8601DateFormatter().string(from: Date())
         let computedSeverity = effectiveSeverity(for: storyboard)
 
@@ -22,6 +34,7 @@ enum StoryboardHTMLRenderer {
             ),
             severity: storyboard.severity?.rawValue,
             computedSeverity: computedSeverity.rawValue,
+            badge: kind.label,
             signals: storyboard.signals
                 .sorted { $0.label < $1.label }
                 .map { SignalData(id: $0.id, label: $0.label) },
@@ -96,6 +109,7 @@ private struct StoryData: Codable {
     let scenario: ScenarioData
     let severity: String?
     let computedSeverity: String
+    let badge: String
     let signals: [SignalData]
     let rules: [RuleData]
     let actions: [ActionData]
@@ -176,11 +190,14 @@ function render(){
   $("#scenarioName").textContent = scenario.name || "Untitled scenario";
   $("#scenarioDesc").textContent = scenario.description || "";
   $("#purposeBox").textContent = scenario.description || "Purpose statement goes here.";
+  $("#scenarioBadge").textContent = STORY.badge || "Native Scenario";
   const firstNotes = (STORY.actions || []).map(a => a.notes).find(n => n && n.length) || "";
   $("#notesBox").textContent = firstNotes || "—";
   $("#schemaVer").textContent = `schema v${STORY.version || "1"}`;
   $("#severityPill").textContent = `Severity: ${severity}`;
-  $("#coveragePill").textContent = `Fixtures: ${passingFixtures(fixtures)}/${fixtures.length} passing`;
+  const passCount = passingFixtures(fixtures);
+  const unknownCount = (fixtures||[]).filter(f => !f.result || f.result.toLowerCase() === "unknown").length;
+  $("#coveragePill").textContent = `Fixtures: ${passCount}/${fixtures.length} passing (${unknownCount} unknown)`;
 
   const tags = $("#tagChips");
   tags.innerHTML = "";
@@ -496,7 +513,9 @@ private let lightTemplate = #"""
     <header>
       <div class="top">
         <div>
-          <h1 id="scenarioName">Scenario Name</h1>
+          <div class="row" style="align-items:baseline; gap:8px;">
+            <h1 id="scenarioName">Scenario Name</h1><span class="badge" id="scenarioBadge">Native Scenario</span>
+          </div>
           <div class="subtitle" id="scenarioDesc">One-line description of the scenario. Keep it calm and readable.</div>
           <div class="chips" id="tagChips"></div>
         </div>

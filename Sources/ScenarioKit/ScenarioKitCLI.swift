@@ -283,7 +283,7 @@ struct StoryboardRender: ParsableCommand {
     var out: String = "storyboard.html"
 
     @Option(name: .long, help: "Theme: light or dark.")
-    var theme: StoryboardTheme = .light
+    var theme: StoryboardTheme = .dark
 
     @Flag(name: .long, help: "Open the generated storyboard (macOS).")
     var open: Bool = false
@@ -305,7 +305,8 @@ struct StoryboardRender: ParsableCommand {
 
         let html = try StoryboardHTMLRenderer.render(
             storyboard: storyboard,
-            theme: theme == .light ? .light : .dark
+            theme: theme == .light ? .light : .dark,
+            kind: .native
         )
         try OutputWriter.write(html, toPath: out)
         print("✔ Wrote storyboard to \(out)")
@@ -337,7 +338,7 @@ struct StoryboardImportEvents: ParsableCommand {
     var name: String?
 
     @Option(name: .long, help: "Theme: light or dark.")
-    var theme: StoryboardTheme = .light
+    var theme: StoryboardTheme = .dark
 
     @Flag(name: .long, help: "Open the generated storyboard (macOS).")
     var open: Bool = false
@@ -349,7 +350,8 @@ struct StoryboardImportEvents: ParsableCommand {
         let storyboard = try EventImport.importEvents(from: anyYAML, sourceName: name)
         let html = try StoryboardHTMLRenderer.render(
             storyboard: storyboard,
-            theme: theme == .light ? .light : .dark
+            theme: theme == .light ? .light : .dark,
+            kind: .draft("Imported macOS Events")
         )
         try OutputWriter.write(html, toPath: out)
         print("✔ Wrote storyboard to \(out)")

@@ -67,7 +67,7 @@ timeline:
 fixtures:
   - id: F1
     expected: ["RULE-LAUNCHAGENT"]
-    result: pass
+    result: unknown
     event:
       path: "/Users/test/Library/LaunchAgents/com.example.helper.plist"
       user: "test"
@@ -75,7 +75,7 @@ fixtures:
       mode: "0644"
   - id: F2
     expected: ["RULE-TCC-SPAM"]
-    result: fail
+    result: unknown
     event:
       subsystem: "com.apple.TCC"
       category: "prompt"
