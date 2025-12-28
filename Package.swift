@@ -12,9 +12,15 @@ let package: Package = Package(
             targets: ["ScenarioKit"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0")
+    ],
     targets: [
         .executableTarget(
-            name: "ScenarioKit"
+            name: "ScenarioKit",
+            dependencies: [
+                .product(name: "ArgumentParser", package: "swift-argument-parser")
+            ]
         ),
         .testTarget(
             name: "ScenarioKitTests",
