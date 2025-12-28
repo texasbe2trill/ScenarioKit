@@ -1,0 +1,47 @@
+name: enterprise-prod
+description: Projected from Constellation Engine manifest
+
+services:
+  - name: web-frontend
+    depends_on: [api-gateway]
+
+  - name: mobile-api
+    depends_on: [api-gateway]
+
+  - name: api-gateway
+    depends_on: [auth-service, user-service, catalog-service, checkout-service]
+
+  - name: auth-service
+    depends_on: [postgres-primary, audit-log-service]
+
+  - name: user-service
+    depends_on: [postgres-primary]
+
+  - name: catalog-service
+    depends_on: [postgres-primary, redis-cache, search-cluster]
+
+  - name: checkout-service
+    depends_on: [payments-service, orders-service, inventory-service]
+
+  - name: payments-service
+    depends_on: [postgres-primary, audit-log-service]
+
+  - name: orders-service
+    depends_on: [postgres-primary, kafka-bus, audit-log-service]
+
+  - name: inventory-service
+    depends_on: [postgres-primary]
+
+  - name: shipping-service
+    depends_on: [orders-service, postgres-primary]
+
+  - name: notifications-service
+    depends_on: [kafka-bus, object-store]
+
+  - name: kafka-bus
+  - name: redis-cache
+  - name: search-cluster
+  - name: postgres-primary
+  - name: object-store
+  - name: telemetry-collector
+  - name: audit-log-service

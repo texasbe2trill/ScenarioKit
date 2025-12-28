@@ -6,6 +6,7 @@ enum ScenarioKitError: LocalizedError {
     case invalidYAML(String, underlying: Error)
     case validationFailed(String)
     case jsonEncodingFailed(underlying: Error)
+    case unableToWriteFile(String, underlying: Error)
 
     var errorDescription: String? {
         switch self {
@@ -19,6 +20,8 @@ enum ScenarioKitError: LocalizedError {
             return "Validation failed: \(message)"
         case .jsonEncodingFailed(let underlying):
             return "Could not encode JSON: \(underlying.localizedDescription)"
+        case .unableToWriteFile(let path, let underlying):
+            return "Could not write to \(path): \(underlying.localizedDescription)"
         }
     }
 }

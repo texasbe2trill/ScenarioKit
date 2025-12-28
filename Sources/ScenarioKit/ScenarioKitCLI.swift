@@ -74,6 +74,9 @@ struct Analyze: ParsableCommand {
     @Option(name: .shortAndLong, help: "Output format: text or json.")
     var format: OutputFormat = .text
 
+    @Option(name: [.short, .long], help: "Write output to a file instead of stdout.")
+    var output: String?
+
     func run() throws {
         let text = try FileLoader.loadText(atPath: path)
         print("✔ Loaded \(path) (\(text.utf8.count) bytes)")
@@ -105,27 +108,42 @@ struct Analyze: ParsableCommand {
 
         let report = ScenarioAnalyzer.analyze(scenario)
 
+        let renderedOutput: String
         switch format {
         case .text:
-            print("✔ Services: \(report.serviceCount)")
-            report.services.forEach { node in
-                let dependsOn = node.dependsOn.isEmpty ? "(none)" : node.dependsOn.joined(separator: ", ")
-                let dependents = node.dependents.isEmpty ? "(none)" : node.dependents.joined(separator: ", ")
-                print("- \(node.name)")
-                print("  depends_on: \(dependsOn)")
-                print("  dependents: \(dependents)")
-            }
+            renderedOutput = renderText(report: report)
         case .json:
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             do {
                 let data = try encoder.encode(report)
-                if let output = String(data: data, encoding: .utf8) {
-                    print(output)
+                guard let output = String(data: data, encoding: .utf8) else {
+                    throw ScenarioKitError.jsonEncodingFailed(underlying: CocoaError(.coderInvalidValue))
                 }
+                renderedOutput = output
             } catch {
                 throw ScenarioKitError.jsonEncodingFailed(underlying: error)
             }
         }
+
+        if let outputPath = output {
+            try OutputWriter.write(renderedOutput, toPath: outputPath)
+            print("✔ Wrote output to \(outputPath)")
+        } else {
+            print(renderedOutput)
+        }
+    }
+
+    private func renderText(report: AnalysisReport) -> String {
+        var lines: [String] = []
+        lines.append("✔ Services: \(report.serviceCount)")
+        for node in report.services {
+            let dependsOn = node.dependsOn.isEmpty ? "(none)" : node.dependsOn.joined(separator: ", ")
+            let dependents = node.dependents.isEmpty ? "(none)" : node.dependents.joined(separator: ", ")
+            lines.append("- \(node.name)")
+            lines.append("  depends_on: \(dependsOn)")
+            lines.append("  dependents: \(dependents)")
+        }
+        return lines.joined(separator: "\n")
     }
 }
