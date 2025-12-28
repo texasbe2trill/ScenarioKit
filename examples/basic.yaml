@@ -1,0 +1,8 @@
+name: example-scenario
+description: Minimal test scenario
+
+services:
+  - name: api
+    depends_on: [database]
+
+  - name: database
