@@ -7,6 +7,10 @@ enum ScenarioKitError: LocalizedError {
     case validationFailed(String)
     case jsonEncodingFailed(underlying: Error)
     case unableToWriteFile(String, underlying: Error)
+    case unableToOpenFile(String, underlying: Error)
+    case mermaidResourceMissing
+    case invalidStoryboardYAML(underlying: Error)
+    case unsupportedEventsImport
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +26,14 @@ enum ScenarioKitError: LocalizedError {
             return "Could not encode JSON: \(underlying.localizedDescription)"
         case .unableToWriteFile(let path, let underlying):
             return "Could not write to \(path): \(underlying.localizedDescription)"
+        case .unableToOpenFile(let path, let underlying):
+            return "Could not open \(path): \(underlying.localizedDescription)"
+        case .mermaidResourceMissing:
+            return "Mermaid resource is missing from the app bundle."
+        case .invalidStoryboardYAML(let underlying):
+            return "Invalid storyboard YAML: \(underlying.localizedDescription)"
+        case .unsupportedEventsImport:
+            return "Unsupported events YAML shape; expected top-level list or events/cases array."
         }
     }
 }
