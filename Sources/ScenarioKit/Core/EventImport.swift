@@ -273,6 +273,7 @@ enum EventImport {
 
     private static func filterNoise(from events: [YAMLValue]) -> [YAMLValue] {
         var dedupe: [String: Int] = [:]
+        var timeDedupe: [String: Date] = [:]
         var kept: [YAMLValue] = []
 
         for event in events {
@@ -280,28 +281,63 @@ enum EventImport {
                 kept.append(event); continue
             }
 
-            let message = string(for: ["eventMessage", "message", "summary", "title"], in: dict)?.lowercased() ?? ""
+            let message = string(for: ["eventMessage", "message", "summary", "title", "composedMessage"], in: dict)?.lowercased() ?? ""
             let process = string(for: ["process", "image", "exe", "ParentImage", "processName"], in: dict)?.lowercased() ?? ""
             let subsystem = string(for: ["subsystem", "system"], in: dict)?.lowercased() ?? ""
             let category = string(for: ["category"], in: dict)?.lowercased() ?? ""
+            let timestamp = eventTimestamp(in: dict)
 
             let text = (message + " " + process + " " + subsystem + " " + category)
             let hasKeyword = interestingKeywords.contains { text.contains($0) }
             let noisySubsystem = noiseSubsystems.contains(subsystem)
             let noisyProcess = noiseProcesses.contains(process)
+            let spotlightNoise = process.hasPrefix("mds") || process.hasPrefix("mdworker") || subsystem.contains("metadata") || subsystem.contains("spotlight")
+            let windowServerNoise = process.contains("windowserver") || subsystem.contains("windowserver")
 
-            if !hasKeyword && message.isEmpty && noisySubsystem { continue }
-            if !hasKeyword && noisyProcess && message.count < 6 { continue }
+            // Always keep curl/network-ish even if subsystem absent
+            let isCurlish = process.contains("curl") || process.contains("wget") || message.contains("http") || message.contains("https")
+
+            if !hasKeyword && !isCurlish && message.isEmpty && noisySubsystem { continue }
+            if !hasKeyword && !isCurlish && noisyProcess && message.count < 6 { continue }
+            if !hasKeyword && !isCurlish && windowServerNoise { continue }
+            if !hasKeyword && !isCurlish && spotlightNoise && message.count < 80 { continue }
 
             let dedupeKey = "\(process)|\(subsystem)|\(message)"
-            let seen = dedupe[dedupeKey, default: 0]
-            if seen >= 3 && !hasKeyword { continue }
-            dedupe[dedupeKey] = seen + 1
+            if let ts = timestamp {
+                if let last = timeDedupe[dedupeKey], ts.timeIntervalSince(last) < 30, !hasKeyword && !isCurlish { continue }
+                timeDedupe[dedupeKey] = ts
+            } else {
+                let seen = dedupe[dedupeKey, default: 0]
+                if seen >= 1 && !hasKeyword && !isCurlish { continue }
+                dedupe[dedupeKey] = seen + 1
+            }
 
             kept.append(event)
         }
 
         return kept
+    }
+
+    private static func eventTimestamp(in dict: [String: YAMLValue]) -> Date? {
+        let keys = ["timestamp", "time", "ts", "datetime", "eventTime", "@timestamp"]
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        for key in keys {
+            if let value = dict[key] {
+                switch value {
+                case .string(let s):
+                    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let date = formatter.date(from: trimmed) { return date }
+                case .int(let i):
+                    return Date(timeIntervalSince1970: TimeInterval(i))
+                case .double(let d):
+                    return Date(timeIntervalSince1970: TimeInterval(d))
+                default:
+                    continue
+                }
+            }
+        }
+        return nil
     }
 
     private static let interestingKeywords: [String] = [
@@ -313,12 +349,13 @@ enum EventImport {
 
     private static let noiseSubsystems: Set<String> = [
         "com.apple.runningboard", "com.apple.locationd", "com.apple.audio", "com.apple.imfoundation", "com.apple.wifi",
-        "com.apple.coremedia", "com.apple.coretelephony", "com.apple.multipeerconnectivity", "com.apple.backboardd"
+        "com.apple.coremedia", "com.apple.coretelephony", "com.apple.multipeerconnectivity", "com.apple.backboardd",
+        "com.apple.metadata.mds", "com.apple.metadata", "com.apple.spotlight", "com.apple.windowserver"
     ]
 
     private static let noiseProcesses: Set<String> = [
-        "rapportd", "sharingd", "bird", "cloudd", "trustd", "mds", "mdworker", "mds_stores", "WindowServer",
-        "logd", "syslogd", "cfprefsd", "distnoted", "UserEventAgent"
+        "rapportd", "sharingd", "bird", "cloudd", "trustd", "mds", "mdworker", "mds_stores", "windowserver",
+        "logd", "syslogd", "cfprefsd", "distnoted", "usereventagent"
     ]
 
     private static func detectTags(from events: [YAMLValue]) -> Set<String> {

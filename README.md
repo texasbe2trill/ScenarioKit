@@ -18,30 +18,74 @@ swift build
 ## Quickstart: macOS logs → storyboard
 Assumes `jq` installed (`brew install jq`).
 
-General Unified Logs to storyboard:
+Targeted curl/wget, DNS, and plist signals:
 ```sh
-log show --last 15m --style json \
+log show --last 20m --style json \
+  --predicate 'process == "curl" || process == "wget" || eventMessage CONTAINS "http" || eventMessage CONTAINS ".plist" || subsystem CONTAINS "dns"' \
 | jq '[.[] | {
-  timestamp: .timestamp,
-  process: .process,
-  subsystem: .subsystem,
-  category: .category,
-  eventMessage: .eventMessage,
-  senderImagePath: .senderImagePath
-}]' > macos_events.json
+  timestamp,
+  process,
+  processID,
+  processImagePath: .imagePath,
+  subsystem,
+  category,
+  eventMessage,
+  composedMessage,
+  senderImagePath,
+  senderImageUUID,
+  traceID,
+  bootUUID,
+  machTimestamp
+}]' > macos_signals.json
 
-swift run scenariokit storyboard import-events macos_events.json --open
-# Notes: import-events applies noise filtering and bundled macOS Sigma rules; only matching events are kept.
+swift run scenariokit storyboard import-events macos_signals.json --open
+# Notes: import-events keeps only Sigma-matched events; curl/wget/DNS/plist hits should render fixtures with rule IDs.
 ```
 
 High-signal TCC example:
 ```sh
 log show --last 60m --style json --predicate 'subsystem == "com.apple.TCC"' \
-| jq '[.[] | { timestamp, process, subsystem, category, eventMessage, senderImagePath }]' \
+| jq '[.[] | {
+  timestamp,
+  process,
+  processID,
+  processImagePath: .imagePath,
+  subsystem,
+  category,
+  eventMessage,
+  composedMessage,
+  messageType,
+  senderImagePath,
+  senderImageUUID,
+  threadID,
+  activityIdentifier,
+  machTimestamp,
+  traceID,
+  bootUUID,
+  timezoneName
+}]' \
 > tcc_events.json
 
 swift run scenariokit storyboard import-events tcc_events.json --open
-# Notes: if no Sigma rule matches, the HTML will be sparse/empty.
+# Notes: if no Sigma rule matches, the HTML will be sparse/empty; TCC churn alone may be filtered as background noise.
+```
+
+General Unified Logs (no predicate; noisy):
+```sh
+log show --last 10m --style json \
+| jq '[.[] | {
+  timestamp,
+  process,
+  subsystem,
+  category,
+  eventMessage,
+  composedMessage,
+  senderImagePath,
+  senderImageUUID
+}]' > macos_events.json
+
+swift run scenariokit storyboard import-events macos_events.json --open
+# Notes: large exports can be mostly noise; prefer predicates above for clearer output.
 ```
 
 Curated storyboard (reviewed, shareable):
@@ -69,7 +113,7 @@ Notes:
 - Event import applies noise filtering to drop chatty macOS background subsystems and keep security-relevant signals (curl/TCC/persistence/credential hints).
 - Bundled macOS Sigma rules are applied during `import-events`; only events that match at least one Sigma rule are kept and annotated in the HTML (fixtures show “Sigma: <rule ids>”).
 - Coverage treats Sigma matches as “passing”; expect coverage to drop to 0 if nothing matches.
-- Large Unified Log exports can be very noisy; prefer predicates (e.g., `subsystem == "com.apple.TCC"`) before import.
+- Large Unified Log exports can be very noisy; prefer predicates (e.g., `subsystem == "com.apple.TCC"`) before import, and include the richer fields above to improve matching.
  
 ## Examples
 - macOS storyboard (curated): `examples/storyboard_macos_example.yaml`

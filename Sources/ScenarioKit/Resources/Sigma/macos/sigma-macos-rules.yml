@@ -1,15 +1,28 @@
 ---
-title: macOS Curl Network Activity
-id: MACOS_Curl_Network
+title: macOS Curl/Wget Network Activity
+id: MACOS_Curl_Wget_Network
 status: experimental
-description: Detects curl network usage observed in process telemetry
+description: Detects curl or wget network usage observed in process telemetry, even when subsystem is missing
 logsource:
   product: macos
 detection:
   selection:
-    process|contains: curl
-    subsystem|contains: network
-  condition: selection
+    process|contains:
+      - curl
+      - wget
+  selection2:
+    eventMessage|contains:
+      - http
+      - https
+      - curl
+      - wget
+  selection3:
+    composedMessage|contains: http
+  selection4:
+    senderImagePath|contains:
+      - curl
+      - wget
+  condition: selection or selection2 or selection3 or selection4
 ---
 title: macOS TCC Prompt Activity
 id: MACOS_TCC_Prompt
@@ -31,4 +44,47 @@ logsource:
 detection:
   selection:
     eventMessage|contains: launchagent
-  condition: selection
+  selection2:
+    composedMessage|contains: launchagent
+  selection3:
+    eventMessage|contains: launchdaemon
+  condition: selection or selection2 or selection3
+
+---
+title: macOS DNS Lookup Activity
+id: MACOS_DNS_Resolver
+status: experimental
+description: Detects DNS resolver activity in Unified Logs
+logsource:
+  product: macos
+detection:
+  selection:
+    category|contains: dns
+  selection2:
+    subsystem|contains: dns
+  selection3:
+    eventMessage|contains:
+      - resolver
+      - dns
+      - query
+  selection4:
+    composedMessage|contains: dns
+  condition: selection or selection2 or selection3 or selection4
+
+---
+title: macOS Plist Write or Persistence Artifact
+id: MACOS_Plist_Write
+status: experimental
+description: Detects .plist writes or persistence indicators in Unified Logs
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - .plist
+      - launchagent
+      - launchdaemon
+      - loginitem
+  selection2:
+    composedMessage|contains: .plist
+  condition: selection or selection2
