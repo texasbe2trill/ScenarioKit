@@ -65,7 +65,7 @@ log show --last 20m --style json \
     (subsystem CONTAINS[c] "dns" OR category CONTAINS[c] "dns") OR
     (subsystem CONTAINS[c] "tcc" OR eventMessage CONTAINS[c] "tcc") OR
     (eventMessage CONTAINS[c] "syspolicyd" OR eventMessage CONTAINS[c] "gatekeeper" OR eventMessage CONTAINS[c] "xprotect" OR eventMessage CONTAINS[c] "quarantine")
-  ' \
+  '
 | jq '[.[] | {
   timestamp,
   process,
@@ -198,7 +198,7 @@ log show --last 60m --style json --predicate 'subsystem == "com.apple.TCC"' \
   timezoneName,
   hostName,
   osVersion
-}]' \
+}]'
 > tcc_events.json
 
 # Homebrew:
