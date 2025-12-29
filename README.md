@@ -511,6 +511,14 @@ swift run scenariokit storyboard import-events events.json --open
 
 **Fix**: Review bundled Sigma rules in [Sources/ScenarioKit/Resources/Sigma/macos/sigma-macos-rules.yml](Sources/ScenarioKit/Resources/Sigma/macos/sigma-macos-rules.yml) and ensure your predicate captures the expected event types.
 
+## Acknowledgments
+
+**Sigma Detection Rules**
+
+This project includes detection rules sourced from the [SigmaHQ repository](https://github.com/SigmaHQ/sigma), which provides a generic and open signature format for SIEM systems. These rules have been adapted for macOS security event detection.
+
+We acknowledge and thank the Sigma project and its contributors for establishing this open standard that makes threat detection accessible and shareable across the security community.
+
 ## License
 
 See [LICENSE](LICENSE) for details.
