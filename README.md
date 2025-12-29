@@ -24,12 +24,31 @@
 - `jq` for log processing (`brew install jq`)
 - No external services; everything runs locally
 
-## Quick Install
+## Installation
+
+### Homebrew (Recommended)
+
+```sh
+brew install texasbe2trill/tap/scenariokit
+```
+
+Verify installation:
+```sh
+scenariokit --version
+scenariokit --help
+```
+
+### Build from Source
 
 ```sh
 git clone https://github.com/texasbe2trill/ScenarioKit.git
 cd ScenarioKit
 swift build
+```
+
+Run with:
+```sh
+swift run scenariokit --version
 ```
 
 ## Quick Start: Live Logs → Storyboard
@@ -71,6 +90,10 @@ log show --last 20m --style json \
 ### Generate the Storyboard
 
 ```sh
+# If installed via Homebrew:
+scenariokit storyboard import-events macos_signals.json --open
+
+# If built from source:
 swift run scenariokit storyboard import-events macos_signals.json --open
 ```
 
@@ -133,6 +156,10 @@ severity: medium
 
 Then render it:
 ```sh
+# Homebrew:
+scenariokit storyboard render my_storyboard.yaml --open
+
+# Source:
 swift run scenariokit storyboard render my_storyboard.yaml --open
 ```
 
@@ -174,6 +201,10 @@ log show --last 60m --style json --predicate 'subsystem == "com.apple.TCC"' \
 }]' \
 > tcc_events.json
 
+# Homebrew:
+scenariokit storyboard import-events tcc_events.json --open
+
+# Source:
 swift run scenariokit storyboard import-events tcc_events.json --open
 ```
 
@@ -187,15 +218,17 @@ For richer coverage using sysdiagnose archives:
 # Generate sysdiagnose: Press ⌃⌥⌘⇧. or run:
 sudo sysdiagnose -f /tmp
 
-# Extract events from the logarchive:
-swift run scenariokit sysdiagnose-dump \
+# Extract events from the logarchive (Homebrew):
+scenariokit sysdiagnose-dump \
   "/private/tmp/sysdiagnose_*/system_logs.logarchive" \
   --out macos_sysdiag_events.json \
   --minutes 180
 
 # Validate and generate storyboard:
-swift run scenariokit validate events macos_sysdiag_events.json
-swift run scenariokit storyboard import-events macos_sysdiag_events.json --open
+scenariokit validate events macos_sysdiag_events.json
+scenariokit storyboard import-events macos_sysdiag_events.json --open
+
+# If using source, prefix all commands with: swift run
 ```
 
 Options for `sysdiagnose-dump`:
@@ -209,17 +242,23 @@ Options for `sysdiagnose-dump`:
 For reviewed, shareable scenarios:
 
 ```sh
+# Homebrew:
+scenariokit storyboard render examples/storyboard_macos_example.yaml --open
+
+# Source:
 swift run scenariokit storyboard render examples/storyboard_macos_example.yaml --open
 ```
 
 ## CLI Reference
+
+> **Note**: Examples below use `scenariokit` (Homebrew). If building from source, prefix all commands with `swift run`.
 
 ### Render Storyboard
 
 Generate HTML from a curated storyboard YAML/JSON:
 
 ```sh
-swift run scenariokit storyboard render <path> [options]
+scenariokit storyboard render <path> [options]
 ```
 
 **Arguments:**
@@ -233,7 +272,7 @@ swift run scenariokit storyboard render <path> [options]
 
 **Example:**
 ```sh
-swift run scenariokit storyboard render my_scenario.yaml --out report.html --theme light --open
+scenariokit storyboard render my_scenario.yaml --out report.html --theme light --open
 ```
 
 ---
@@ -243,7 +282,7 @@ swift run scenariokit storyboard render my_scenario.yaml --out report.html --the
 Generate a storyboard draft from raw event logs (applies Sigma matching):
 
 ```sh
-swift run scenariokit storyboard import-events <path> [options]
+scenariokit storyboard import-events <path> [options]
 ```
 
 **Arguments:**
@@ -258,7 +297,7 @@ swift run scenariokit storyboard import-events <path> [options]
 
 **Example:**
 ```sh
-swift run scenariokit storyboard import-events events.json --name "HTTP Investigation" --open
+scenariokit storyboard import-events events.json --name "HTTP Investigation" --open
 ```
 
 **How it works:**
@@ -278,7 +317,7 @@ swift run scenariokit storyboard import-events events.json --name "HTTP Investig
 Check if a storyboard YAML/JSON is valid:
 
 ```sh
-swift run scenariokit validate storyboard <path>
+scenariokit validate storyboard <path>
 ```
 
 ---
@@ -288,7 +327,7 @@ swift run scenariokit validate storyboard <path>
 Check if events JSON/YAML can be parsed and imported:
 
 ```sh
-swift run scenariokit validate events <path>
+scenariokit validate events <path>
 ```
 
 ---
@@ -298,7 +337,7 @@ swift run scenariokit validate events <path>
 Extract security-relevant events from a sysdiagnose logarchive:
 
 ```sh
-swift run scenariokit sysdiagnose-dump <logarchive-or-dir> [options]
+scenariokit sysdiagnose-dump <logarchive-or-dir> [options]
 ```
 
 **Arguments:**
@@ -313,7 +352,7 @@ swift run scenariokit sysdiagnose-dump <logarchive-or-dir> [options]
 
 **Example:**
 ```sh
-swift run scenariokit sysdiagnose-dump \
+scenariokit sysdiagnose-dump \
   /tmp/sysdiagnose_2025.12.29_*/system_logs.logarchive \
   --out events.json \
   --minutes 60
@@ -436,10 +475,12 @@ These rules automatically tag matched events with MITRE ATT&CK techniques.
 **Quick demo:**
 ```sh
 # Generate a complete storyboard from events (9/9 fixtures passing, 10 matched rules)
-swift run scenariokit storyboard import-events examples/macos_events_example.yaml --open
+scenariokit storyboard import-events examples/macos_events_example.yaml --open
 
 # Or render the curated storyboard (4/4 fixtures passing, 4 matched rules)
-swift run scenariokit storyboard render examples/storyboard_macos_example.yaml --open
+scenariokit storyboard render examples/storyboard_macos_example.yaml --open
+
+# If built from source, prefix with: swift run
 ```
 
 ## Output Philosophy
@@ -503,7 +544,7 @@ swift run scenariokit storyboard import-events events.json --open
 1. Verify your predicate captures relevant events (curl, TCC, LaunchAgents, etc.)
 2. Check that events have `process`, `subsystem`, or `eventMessage` fields
 3. Use a broader time window (`--last 60m` instead of `--last 10m`)
-4. Validate events: `swift run scenariokit validate events your_events.json`
+4. Validate events: `scenariokit validate events your_events.json`
 
 ### ❌ "0 matched events"
 
