@@ -179,6 +179,15 @@ struct SysdiagnoseDump: ParsableCommand {
         @Option(name: .long, help: "Lookback window, in minutes (passed to log show --last).")
         var minutes: Int = 120
 
+        @Option(name: .long, help: "Override the default security-focused predicate for log show.")
+        var predicate: String?
+
+        @Flag(name: .long, help: "Write raw log show output (NDJSON). Default wraps output into a JSON array for import-events.")
+        var raw: Bool = false
+
+        @Flag(name: .long, help: "Include info/debug messages (slower and larger output).")
+        var includeDebug: Bool = false
+
         func run() throws {
                 let archivePath: String
                 let fm = FileManager.default
@@ -191,48 +200,72 @@ struct SysdiagnoseDump: ParsableCommand {
                         archivePath = path
                 }
 
-                let predicate = Self.defaultPredicate
+                let predicate = predicate ?? Self.defaultPredicate
                 let lastArg = "\(minutes)m"
 
                 if !fm.fileExists(atPath: out) {
-                        fm.createFile(atPath: out, contents: nil, attributes: nil)
+                    fm.createFile(atPath: out, contents: nil, attributes: nil)
                 }
 
                 print("▸ Running log show against \(archivePath) ...")
                 let proc = Process()
                 proc.executableURL = URL(fileURLWithPath: "/usr/bin/log")
-                proc.arguments = [
-                        "show",
-                        "--style", "json",
-                        "--info", "--debug",
-                        "--source",
-                        "--archive", archivePath,
-                        "--predicate", predicate,
-                        "--last", lastArg
+                var args: [String] = ["show", "--style", "ndjson"]
+                if includeDebug {
+                    args += ["--info", "--debug"]
+                }
+                args += [
+                    "--source",
+                    "--archive", archivePath,
+                    "--predicate", predicate,
+                    "--last", lastArg
                 ]
+                proc.arguments = args
+                proc.qualityOfService = .userInitiated
 
-                let outURL = URL(fileURLWithPath: out)
-                let fh = try FileHandle(forWritingTo: outURL)
-                proc.standardOutput = fh
                 let errPipe = Pipe()
                 proc.standardError = errPipe
 
+                var tempOutURL: URL?
+                if raw {
+                    let outURL = URL(fileURLWithPath: out)
+                    let fh = try FileHandle(forWritingTo: outURL)
+                    try fh.truncate(atOffset: 0)
+                    proc.standardOutput = fh
+                } else {
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".ndjson")
+                    FileManager.default.createFile(atPath: tempURL.path, contents: nil, attributes: nil)
+                    let tempHandle = try FileHandle(forWritingTo: tempURL)
+                    try tempHandle.truncate(atOffset: 0)
+                    proc.standardOutput = tempHandle
+                    tempOutURL = tempURL
+                }
+
                 do {
-                        try proc.run()
-                        proc.waitUntilExit()
+                    try proc.run()
+                    proc.waitUntilExit()
                 } catch {
-                        throw ScenarioKitError.unableToOpenFile(archivePath, underlying: error)
+                    throw ScenarioKitError.unableToOpenFile(archivePath, underlying: error)
                 }
 
                 let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
                 if !errData.isEmpty, let errStr = String(data: errData, encoding: .utf8), !errStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        fputs(errStr, stderr)
+                    fputs(errStr, stderr)
                 }
 
-                if proc.terminationStatus == 0 {
-                        print("✔ Wrote filtered events to \(out)")
-                } else {
-                        throw ScenarioKitError.unableToOpenFile(out, underlying: NSError(domain: "ScenarioKit", code: Int(proc.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "log show exited with code \(proc.terminationStatus)"]))
+                guard proc.terminationStatus == 0 else {
+                    throw ScenarioKitError.unableToOpenFile(out, underlying: NSError(domain: "ScenarioKit", code: Int(proc.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "log show exited with code \(proc.terminationStatus)"]))
+                }
+
+                if raw {
+                    print("✔ Wrote filtered events (raw NDJSON) to \(out)")
+                } else if let tempURL = tempOutURL {
+                    let data = try Data(contentsOf: tempURL)
+                    let content = String(data: data, encoding: .utf8) ?? ""
+                    let lines = content.split(whereSeparator: { $0.isNewline }).map { String($0) }.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    let array = "[\n" + lines.joined(separator: ",\n") + "\n]"
+                    try array.write(to: URL(fileURLWithPath: out), atomically: true, encoding: .utf8)
+                    print("✔ Wrote filtered events (JSON array) to \(out)")
                 }
         }
 
