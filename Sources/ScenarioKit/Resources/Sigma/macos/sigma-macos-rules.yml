@@ -1,28 +1,32 @@
 ---
-title: macOS Curl/Wget Network Activity
-id: MACOS_Curl_Wget_Network
+title: macOS Command HTTP Fetch
+id: MACOS_Command_HTTP_Fetch
 status: experimental
-description: Detects curl or wget network usage observed in process telemetry, even when subsystem is missing
+description: Detects curl/wget style HTTP fetches with explicit URL indicators
 logsource:
   product: macos
 detection:
-  selection:
+  proc:
     process|contains:
       - curl
       - wget
-  selection2:
+      - "sh -c curl"
+  url:
     eventMessage|contains:
       - http
       - https
-      - curl
-      - wget
-  selection3:
+      - "http://"
+      - "https://"
+      - " -o "
+      - " -O "
+      - connect
+  composed:
     composedMessage|contains: http
-  selection4:
+  sender:
     senderImagePath|contains:
       - curl
       - wget
-  condition: selection or selection2 or selection3 or selection4
+  condition: proc and url
 ---
 title: macOS TCC Prompt Activity
 id: MACOS_TCC_Prompt
@@ -33,7 +37,13 @@ logsource:
 detection:
   selection:
     subsystem|contains: com.apple.tcc
-  condition: selection
+  selection2:
+    eventMessage|contains:
+      - tcc
+      - kTCCService
+      - "access was denied"
+      - "privacy prompt"
+  condition: selection or selection2
 ---
 title: macOS LaunchAgent Persistence Artifact
 id: MACOS_LaunchAgent_Write
@@ -43,11 +53,22 @@ logsource:
   product: macos
 detection:
   selection:
-    eventMessage|contains: launchagent
+    eventMessage|contains:
+      - launchagent
+      - launchdaemon
+      - "/LaunchAgents"
+      - "/LaunchDaemons"
+      - ".plist"
   selection2:
-    composedMessage|contains: launchagent
+    composedMessage|contains:
+      - launchagent
+      - launchdaemon
+      - ".plist"
   selection3:
-    eventMessage|contains: launchdaemon
+    path|contains:
+      - "~/Library/LaunchAgents"
+      - "/Library/LaunchAgents"
+      - "/Library/LaunchDaemons"
   condition: selection or selection2 or selection3
 
 ---
@@ -67,9 +88,11 @@ detection:
       - resolver
       - dns
       - query
+      - "A record"
+      - "AAAA record"
   selection4:
     composedMessage|contains: dns
-  condition: selection or selection2 or selection3 or selection4
+  condition: selection3 or selection4 or (selection and selection2)
 
 ---
 title: macOS Plist Write or Persistence Artifact
@@ -87,4 +110,23 @@ detection:
       - loginitem
   selection2:
     composedMessage|contains: .plist
-  condition: selection or selection2
+  selection3:
+    path|contains: .plist
+  condition: selection or selection2 or selection3
+
+---
+title: macOS Syspolicy or XProtect Block
+id: MACOS_Syspolicy_Block
+status: experimental
+description: Detects Gatekeeper, syspolicyd, or XProtect blocks/alerts
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - syspolicyd
+      - gatekeeper
+      - quarantine
+      - xprotect
+      - malware
+  condition: selection

@@ -31,11 +31,14 @@ enum EventImport {
         let matchedTuples: [(event: YAMLValue, matches: [String])]
         if let sigmaEngine {
             let results = sigmaEngine.match(events: noiseFiltered)
-            matchedTuples = results
             if results.isEmpty {
-                fputs("⚠️  sigma: no events matched bundled macOS Sigma rules; HTML may be empty.\n", stderr)
-            } else if results.count < noiseFiltered.count {
-                fputs("ℹ️  sigma: kept \(results.count) of \(noiseFiltered.count) events that matched Sigma macOS rules.\n", stderr)
+                fputs("⚠️  sigma: no events matched bundled macOS Sigma rules; falling back to importer-selected events.\n", stderr)
+                matchedTuples = noiseFiltered.map { ($0, []) }
+            } else {
+                matchedTuples = results
+                if results.count < noiseFiltered.count {
+                    fputs("ℹ️  sigma: kept \(results.count) of \(noiseFiltered.count) events that matched Sigma macOS rules.\n", stderr)
+                }
             }
         } else {
             matchedTuples = noiseFiltered.map { ($0, []) }
@@ -285,6 +288,7 @@ enum EventImport {
             let process = string(for: ["process", "image", "exe", "ParentImage", "processName"], in: dict)?.lowercased() ?? ""
             let subsystem = string(for: ["subsystem", "system"], in: dict)?.lowercased() ?? ""
             let category = string(for: ["category"], in: dict)?.lowercased() ?? ""
+            let messageType = string(for: ["messageType"], in: dict)?.lowercased() ?? ""
             let timestamp = eventTimestamp(in: dict)
 
             let text = (message + " " + process + " " + subsystem + " " + category)
@@ -296,6 +300,18 @@ enum EventImport {
 
             // Always keep curl/network-ish even if subsystem absent
             let isCurlish = process.contains("curl") || process.contains("wget") || message.contains("http") || message.contains("https")
+
+            let matchesNoisePattern = noiseMessagePatterns.contains(where: { pattern in message.contains(pattern) })
+
+            // EDR-like stance: if nothing interesting and not curlish, drop early
+            if !hasKeyword && !isCurlish { continue }
+            // Drop low-value Default chatter unless curlish
+            if !isCurlish && messageType == "default" && !hasKeyword { continue }
+            // Drop known sandbox/XPC churn
+            if !hasKeyword && !isCurlish && matchesNoisePattern { continue }
+
+            let sandboxDefaultsNoise = (subsystem.contains("com.apple.defaults") || category.contains("cfprefsd")) && (message.contains("rejecting read") || message.contains("kcfpreferencesanyhost"))
+            if !hasKeyword && !isCurlish && sandboxDefaultsNoise { continue }
 
             if !hasKeyword && !isCurlish && message.isEmpty && noisySubsystem { continue }
             if !hasKeyword && !isCurlish && noisyProcess && message.count < 6 { continue }
@@ -344,18 +360,29 @@ enum EventImport {
         "curl", "wget", "http", "https", "download", "egress", "network", "dns", "connection", "connect",
         "tcc", "privacy", "prompt", "denied", "allow", "keychain", "credential", "auth", "authentication",
         "launchagent", "launchdaemon", "plist", "persistence", "loginitem", "launchd",
-        "sudo", "root", "elevated", "malware", "xprotect", "quarantine", "notarized", "unsigned"
+        "sudo", "root", "elevated", "malware", "xprotect", "quarantine", "notarized", "unsigned",
+        "bash", "zsh", "sh -c", "osascript", "python", "command line"
     ]
 
     private static let noiseSubsystems: Set<String> = [
         "com.apple.runningboard", "com.apple.locationd", "com.apple.audio", "com.apple.imfoundation", "com.apple.wifi",
         "com.apple.coremedia", "com.apple.coretelephony", "com.apple.multipeerconnectivity", "com.apple.backboardd",
-        "com.apple.metadata.mds", "com.apple.metadata", "com.apple.spotlight", "com.apple.windowserver"
+        "com.apple.metadata.mds", "com.apple.metadata", "com.apple.spotlight", "com.apple.windowserver", "com.apple.defaults"
     ]
 
     private static let noiseProcesses: Set<String> = [
         "rapportd", "sharingd", "bird", "cloudd", "trustd", "mds", "mdworker", "mds_stores", "windowserver",
-        "logd", "syslogd", "cfprefsd", "distnoted", "usereventagent"
+        "logd", "syslogd", "cfprefsd", "distnoted", "usereventagent", "backgroundshortcutrunner"
+    ]
+
+    private static let noiseMessagePatterns: [String] = [
+        "xpc_error_connection_invalid",
+        "sandbox is preventing this process",
+        "job not found, returning enoservice",
+        "rejecting write of key(s)",
+        "rejecting read of",
+        "requires user-preference-read",
+        "kcfpreferencesanyhost"
     ]
 
     private static func detectTags(from events: [YAMLValue]) -> Set<String> {

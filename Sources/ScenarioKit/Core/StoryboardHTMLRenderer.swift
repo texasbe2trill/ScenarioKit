@@ -76,7 +76,8 @@ enum StoryboardHTMLRenderer {
                         preview: preview.preview,
                       full: preview.full,
                       truncated: preview.truncated,
-                      matchedRules: fixture.matchedRules ?? []
+                      matchedRules: fixture.matchedRules ?? [],
+                      fields: extractFields(from: fixture.event)
                     )
                 },
             fixtureTotal: storyboard.fixtures.count,
@@ -145,13 +146,86 @@ enum StoryboardHTMLRenderer {
     private static func selectPreviewFields(from event: YAMLValue) -> YAMLValue {
         guard case .object(let dict) = event else { return event }
         var selected: [String: YAMLValue] = [:]
-        let keys = ["eventMessage","message","process","subsystem","category","user","path","senderImagePath","url","domain","ip"]
+        let keys = ["eventMessage","message","process","processID","command","commandLine","cmdline","subsystem","category","user","path","processImagePath","senderImagePath","url","domain","ip"]
         for key in keys {
             if let val = dict[key] {
                 selected[key] = val
             }
         }
         return .object(selected)
+    }
+
+    private static func extractFields(from event: YAMLValue?) -> FixtureFields {
+      guard let event, case .object(let dict) = event else {
+        return FixtureFields(time: nil, process: nil, pid: nil, subsystem: nil, category: nil, messageType: nil, command: nil, path: nil, sender: nil, domain: nil, url: nil, ip: nil, user: nil, host: nil, eventMessage: nil, composedMessage: nil)
+      }
+
+      func value(_ keys: [String]) -> String? {
+        for key in keys {
+          if let raw = dict[key] {
+            switch raw {
+            case .string(let s): return s
+            case .int(let i): return String(i)
+            case .double(let d): return String(d)
+            case .bool(let b): return b ? "true" : "false"
+            default: continue
+            }
+          }
+        }
+        return nil
+      }
+
+      func timeString() -> String? {
+        let keys = ["timestamp", "time", "ts", "datetime", "eventTime", "@timestamp"]
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        for key in keys {
+          if let raw = dict[key] {
+            switch raw {
+            case .string(let s):
+              if let d = formatter.date(from: s.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return formatter.string(from: d)
+              }
+              return s
+            case .int(let i):
+              let date = Date(timeIntervalSince1970: TimeInterval(i))
+              return formatter.string(from: date)
+            case .double(let d):
+              let date = Date(timeIntervalSince1970: TimeInterval(d))
+              return formatter.string(from: date)
+            default:
+              continue
+            }
+          }
+        }
+        return nil
+      }
+
+      let eventMessage = value(["eventMessage", "message", "summary", "title"])
+      let composedMessage = value(["composedMessage"])
+      var command = value(["command", "cmdline", "commandLine", "processCommandLine", "arguments"])
+      if command == nil, let msg = eventMessage?.lowercased(), msg.contains("curl") || msg.contains("wget") || msg.contains("bash") || msg.contains("sh -c") {
+        command = eventMessage
+      }
+
+      return FixtureFields(
+            time: timeString(),
+        process: value(["process", "image", "exe", "ParentImage", "processName"]),
+        pid: value(["processID", "pid", "processId"]),
+        subsystem: value(["subsystem", "system"]),
+        category: value(["category"]),
+        messageType: value(["messageType"]),
+        command: command,
+        path: value(["processImagePath", "image", "path", "exe", "binary", "filePath"]),
+        sender: value(["senderImagePath"]),
+        domain: value(["domain"]),
+        url: value(["url"]),
+        ip: value(["ip", "src_ip", "dst_ip", "sourceIPAddress", "destinationIP", "destinationIp", "remoteAddress"]),
+        user: value(["user", "username", "account", "principal", "userIdentity"]),
+        host: value(["host", "hostname", "device", "computer"]),
+        eventMessage: eventMessage,
+        composedMessage: composedMessage
+      )
     }
 
     private static func toJSONString(_ value: YAMLValue, pretty: Bool, limit: Int) -> String {
@@ -244,6 +318,26 @@ private struct FixtureData: Codable {
     let full: String
     let truncated: Bool
     let matchedRules: [String]
+  let fields: FixtureFields
+}
+
+private struct FixtureFields: Codable {
+  let time: String?
+  let process: String?
+  let pid: String?
+  let subsystem: String?
+  let category: String?
+  let messageType: String?
+  let command: String?
+  let path: String?
+  let sender: String?
+  let domain: String?
+  let url: String?
+  let ip: String?
+  let user: String?
+  let host: String?
+  let eventMessage: String?
+  let composedMessage: String?
 }
 
 private let commonScript = #"""
@@ -266,6 +360,10 @@ function render(){
   const passCount = passingFixtures(fixtures);
   const unknownCount = (fixtures||[]).filter(f => !f.result || f.result.toLowerCase() === "unknown").length;
   $("#coveragePill").textContent = `Fixtures: ${passCount}/${fixtures.length} passing (${unknownCount} unknown)`;
+  const testsIntro = document.getElementById("testsIntro");
+  if (testsIntro) {
+    testsIntro.textContent = "Fixtures show the exact log payload that matched Sigma or importer logic. Expand raw JSON for full context.";
+  }
 
   const tags = $("#tagChips");
   tags.innerHTML = "";
@@ -415,22 +513,47 @@ function renderFixtures(fixtures, shown, total){
   list.style.gap = "10px";
   ff.appendChild(list);
 
+  function chip(label, val){
+    if (!val) return "";
+    return `<span class="badge">${escapeHtml(label)}: ${escapeHtml(val)}</span>`;
+  }
+
+  function kv(label, val){
+    if (!val) return "";
+    return `<div class="k">${escapeHtml(label)}</div><div class="v mono">${escapeHtml(val)}</div>`;
+  }
+
   function appendChunk(count){
     const end = Math.min(rendered + count, fixtures.length);
     for (let i = rendered; i < end; i++){
       const f = fixtures[i];
+      const fields = f.fields || {};
+      const why = Array.from(new Set([...(f.matchedRules||[]), ...(f.expected||[])]));
+      const whyBadges = (why.length ? why : ["Kept by importer (interesting event)"]).map(w => `<span class="badge">${escapeHtml(w)}</span>`).join(" ");
+      const chips = [
+        chip("time", fields.time),
+        chip("process", fields.process),
+        chip("pid", fields.pid),
+        chip("subsystem", fields.subsystem),
+        chip("category", fields.category),
+        chip("type", fields.messageType)
+      ].filter(Boolean).join(" ");
+      const keyGrid = [
+        kv("command", fields.command),
+        kv("path", fields.path),
+        kv("sender", fields.sender),
+        kv("user", fields.user),
+        kv("host", fields.host),
+        kv("domain", fields.domain),
+        kv("url", fields.url),
+        kv("ip", fields.ip)
+      ].filter(Boolean).join("");
+      const msg = fields.eventMessage || fields.composedMessage || f.preview || "No message captured";
+
       const box = document.createElement("div");
       box.className = "item";
-      box.dataset.search = `${f.id} ${(f.expected||[]).join(" ")} ${(f.preview||"")} ${(f.matchedRules||[]).join(" ")}`.toLowerCase();
-      const code = document.createElement("pre");
-      code.className = "code";
-      code.textContent = f.preview || "{}";
-      const btn = document.createElement("button");
-      btn.textContent = "Show full event";
-      btn.className = "button";
-      btn.addEventListener("click", ()=>{
-        code.textContent = f.full || f.preview || "{}";
-      });
+      box.dataset.search = `${f.id} ${(f.expected||[]).join(" ")} ${(f.matchedRules||[]).join(" ")} ${msg} ${fields.command||""} ${fields.process||""} ${fields.subsystem||""}`.toLowerCase();
+
       const head = document.createElement("div");
       head.className = "itemhead";
       const sigmaBadge = (f.matchedRules||[]).length ? `<div class="badge">Sigma: ${(f.matchedRules||[]).join(", ")}</div>` : "";
@@ -444,9 +567,47 @@ function renderFixtures(fixtures, shown, total){
           <div class="badge">${(f.result||"unknown").toUpperCase()}</div>
         </div>
       `;
+
+      const msgBox = document.createElement("div");
+      msgBox.className = "box mono";
+      msgBox.style.marginTop = "10px";
+      msgBox.style.whiteSpace = "pre-wrap";
+      msgBox.textContent = msg;
+
+      const metaRow = document.createElement("div");
+      metaRow.className = "row";
+      metaRow.style.marginTop = "8px";
+      metaRow.innerHTML = chips || `<span class="badge">no primary fields</span>`;
+
+      const whyRow = document.createElement("div");
+      whyRow.className = "row";
+      whyRow.style.marginTop = "10px";
+      whyRow.style.gap = "6px";
+      whyRow.style.flexWrap = "wrap";
+      whyRow.innerHTML = whyBadges;
+
+      const kvs = document.createElement("div");
+      kvs.className = "kvs";
+      kvs.style.marginTop = "10px";
+      kvs.innerHTML = keyGrid || `<div class="k">note</div><div class="v">No additional fields</div>`;
+
+      const raw = document.createElement("details");
+      raw.style.marginTop = "10px";
+      const summary = document.createElement("summary");
+      summary.textContent = "Raw JSON";
+      summary.className = "badge";
+      const pre = document.createElement("pre");
+      pre.className = "code";
+      pre.textContent = f.full || f.preview || "{}";
+      raw.appendChild(summary);
+      raw.appendChild(pre);
+
       box.appendChild(head);
-      box.appendChild(code);
-      box.appendChild(btn);
+      box.appendChild(metaRow);
+      box.appendChild(msgBox);
+      box.appendChild(whyRow);
+      box.appendChild(kvs);
+      box.appendChild(raw);
       list.appendChild(box);
     }
     rendered = end;
@@ -542,6 +703,7 @@ private let lightTemplate = #"""
     .top{display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; align-items:flex-start}
     h1{margin:0; font-size:20px}
     .subtitle{color:var(--muted); font-size:13px; margin-top:4px}
+    .muted{color:var(--muted); font-size:12px}
     .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
     .chip{padding:6px 10px; background:var(--chip); border:1px solid var(--line); border-radius:999px; font-size:12px; color:var(--muted)}
     .meta{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end}
@@ -817,6 +979,7 @@ private let darkTemplate = #"""
     .top{display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; align-items:flex-start}
     h1{margin:0; font-size:20px}
     .subtitle{color:var(--muted); font-size:13px; margin-top:4px}
+    .muted{color:var(--muted); font-size:12px}
     .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
     .chip{padding:6px 10px; background:var(--chip); border:1px solid var(--line); border-radius:999px; font-size:12px; color:var(--muted)}
     .meta{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end}
