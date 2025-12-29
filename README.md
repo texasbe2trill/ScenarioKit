@@ -507,6 +507,26 @@ swift run scenariokit storyboard import-events events.json --open
 
 ## Quick Troubleshooting
 
+### ❌ `log show` Returns 0 Events
+
+**Cause**: Terminal doesn't have Full Disk Access permission to read system logs
+
+**Fix**: Grant Full Disk Access to your terminal app:
+1. **System Settings** → **Privacy & Security** → **Full Disk Access**
+2. Click **+** and add your Terminal app (Terminal.app, iTerm2, Warp, etc.)
+3. Toggle it **ON**
+4. **Restart your terminal** completely (quit and reopen)
+5. Try `log show` again
+
+**Alternative**: Use `sudo`:
+```sh
+sudo log show --last 60m --style json --predicate 'subsystem == "com.apple.TCC"' | jq '...'
+```
+
+This is especially common for privacy-sensitive logs like TCC, kernel, and security events. Without Full Disk Access, `log show` silently returns empty results.
+
+---
+
 ### ❌ Empty Summary Fields (Build: —, Unique Hosts: 0)
 
 **Cause**: Missing `hostName` or `osVersion` in your jq query
