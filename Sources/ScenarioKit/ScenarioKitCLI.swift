@@ -6,7 +6,7 @@ struct ScenarioKitCLI: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "scenariokit",
         abstract: "ScenarioKit — macOS security storyboards.",
-        version: "1.0.0",
+        version: "1.0.1",
         subcommands: [StoryboardGroup.self, ValidateGroup.self, SysdiagnoseDump.self]
     )
 }
