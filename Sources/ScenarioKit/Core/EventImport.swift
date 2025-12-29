@@ -96,11 +96,24 @@ enum EventImport {
         if let sigmaEngine {
             let sigmaRules = sigmaEngine.rules(for: matchedRuleIDs)
             rules = sigmaRules.map { r in
-                StoryboardDocument.Rule(
+                // Extract MITRE ATT&CK technique IDs from tags (e.g., "attack.t1071.001" -> "T1071.001")
+                let techniques = r.tags
+                    .filter { $0.lowercased().starts(with: "attack.t") }
+                    .compactMap { tag -> String? in
+                        // Extract technique ID: "attack.t1071.001" -> "T1071.001"
+                        let lowercased = tag.lowercased()
+                        if let range = lowercased.range(of: "attack.t") {
+                            let techniqueID = String(tag[range.upperBound...])
+                            return "T" + techniqueID.uppercased()
+                        }
+                        return nil
+                    }
+                
+                return StoryboardDocument.Rule(
                     id: r.id,
                     title: r.title,
                     severity: .medium,
-                    techniques: [],
+                    techniques: techniques,
                     explanation: r.description,
                     match: [StoryboardDocument.RuleMatch(ok: true, text: r.condition)]
                 )
@@ -131,7 +144,7 @@ enum EventImport {
             scenario: StoryboardDocument.ScenarioMeta(
                 name: name,
                 description: description,
-                owner: nil,
+                owner: "Security Team",
                 tags: Array(tags).sorted()
             ),
             severity: nil,

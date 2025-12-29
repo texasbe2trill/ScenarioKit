@@ -66,3 +66,4 @@ storyboard.html
 /tmp/*.html
 examples/.DS_Store
 .DS_Store
+macos_sysdiag_events.json

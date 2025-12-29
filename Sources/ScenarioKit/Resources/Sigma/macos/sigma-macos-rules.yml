@@ -3,6 +3,10 @@ title: macOS Command HTTP Fetch
 id: MACOS_Command_HTTP_Fetch
 status: experimental
 description: Detects curl/wget style HTTP fetches with explicit URL indicators
+tags:
+  - attack.command_and_control
+  - attack.t1071.001  # Application Layer Protocol: Web Protocols
+  - attack.t1105      # Ingress Tool Transfer
 logsource:
   product: macos
 detection:
@@ -32,6 +36,11 @@ title: macOS TCC Prompt Activity
 id: MACOS_TCC_Prompt
 status: experimental
 description: Detects macOS Transparency, Consent, and Control (TCC) prompts
+tags:
+  - attack.privilege_escalation
+  - attack.t1548          # Abuse Elevation Control Mechanism
+  - attack.defense_evasion
+  - attack.t1562.001      # Impair Defenses: Disable or Modify Tools
 logsource:
   product: macos
 detection:
@@ -49,6 +58,10 @@ title: macOS LaunchAgent Persistence Artifact
 id: MACOS_LaunchAgent_Write
 status: experimental
 description: Detects LaunchAgent/LaunchDaemon artifacts in messages
+tags:
+  - attack.persistence
+  - attack.t1543.001      # Create or Modify System Process: Launch Agent
+  - attack.t1543.004      # Create or Modify System Process: Launch Daemon
 logsource:
   product: macos
 detection:
@@ -76,6 +89,11 @@ title: macOS DNS Lookup Activity
 id: MACOS_DNS_Resolver
 status: experimental
 description: Detects DNS resolver activity in Unified Logs
+tags:
+  - attack.discovery
+  - attack.t1018          # Remote System Discovery
+  - attack.command_and_control
+  - attack.t1071.004      # Application Layer Protocol: DNS
 logsource:
   product: macos
 detection:
@@ -99,6 +117,10 @@ title: macOS Plist Write or Persistence Artifact
 id: MACOS_Plist_Write
 status: experimental
 description: Detects .plist writes or persistence indicators in Unified Logs
+tags:
+  - attack.persistence
+  - attack.t1547.011      # Boot or Logon Autostart Execution: Plist Modification
+  - attack.t1543.001      # Create or Modify System Process: Launch Agent
 logsource:
   product: macos
 detection:
@@ -119,6 +141,10 @@ title: macOS Syspolicy or XProtect Block
 id: MACOS_Syspolicy_Block
 status: experimental
 description: Detects Gatekeeper, syspolicyd, or XProtect blocks/alerts
+tags:
+  - attack.defense_evasion
+  - attack.t1553.001      # Subvert Trust Controls: Gatekeeper Bypass
+  - attack.t1562.001      # Impair Defenses: Disable or Modify Tools
 logsource:
   product: macos
 detection:
@@ -130,3 +156,312 @@ detection:
       - xprotect
       - malware
   condition: selection
+---
+title: macOS Sudo Authentication
+id: MACOS_Sudo_Auth
+status: experimental
+description: Detects sudo privilege escalation attempts
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.003      # Abuse Elevation Control Mechanism: Sudo and Sudo Caching
+logsource:
+  product: macos
+detection:
+  selection:
+    process|contains: sudo
+  selection2:
+    eventMessage|contains:
+      - sudo
+      - "authentication attempt"
+      - "password for"
+  condition: selection or selection2
+
+---
+title: macOS SSH Connection Activity
+id: MACOS_SSH_Activity
+status: experimental
+description: Detects SSH client or server activity
+tags:
+  - attack.lateral_movement
+  - attack.t1021.004      # Remote Services: SSH
+  - attack.command_and_control
+  - attack.t1071.001      # Application Layer Protocol: Web Protocols
+logsource:
+  product: macos
+detection:
+  selection:
+    process|contains:
+      - ssh
+      - sshd
+  selection2:
+    eventMessage|contains:
+      - ssh
+      - "Accepted publickey"
+      - "Connection from"
+  condition: selection or selection2
+
+---
+title: macOS Screensharing or VNC Access
+id: MACOS_Screenshare_Access
+status: experimental
+description: Detects screensharing/VNC activity for potential remote access
+tags:
+  - attack.lateral_movement
+  - attack.t1021.005      # Remote Services: VNC
+  - attack.collection
+  - attack.t1113          # Screen Capture
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - screensharing
+      - screenstream
+      - vnc
+      - rfb
+  selection2:
+    subsystem|contains:
+      - screensharing
+      - com.apple.screensharing
+  condition: selection or selection2
+
+---
+title: macOS Kernel Extension Loading
+id: MACOS_KEXT_Load
+status: experimental
+description: Detects kernel extension (kext) loading events
+tags:
+  - attack.persistence
+  - attack.t1547.006      # Boot or Logon Autostart Execution: Kernel Modules and Extensions
+  - attack.privilege_escalation
+  - attack.t1543          # Create or Modify System Process
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - kext
+      - "kernel extension"
+      - kextload
+      - kextutil
+  selection2:
+    process|contains:
+      - kextload
+      - kextutil
+  condition: selection or selection2
+
+---
+title: macOS File System Event Monitor
+id: MACOS_FSEvents_Monitor
+status: experimental
+description: Detects FSEvents API monitoring which could indicate surveillance
+tags:
+  - attack.collection
+  - attack.t1119          # Automated Collection
+  - attack.discovery
+  - attack.t1083          # File and Directory Discovery
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - fsevent
+      - fsevents
+      - "file system event"
+  condition: selection
+
+---
+title: macOS Open Directory Authentication
+id: MACOS_OpenDirectory_Auth
+status: experimental
+description: Detects Open Directory authentication events
+tags:
+  - attack.credential_access
+  - attack.t1110          # Brute Force
+  - attack.t1078          # Valid Accounts
+logsource:
+  product: macos
+detection:
+  selection:
+    subsystem|contains: com.apple.opendirectory
+  selection2:
+    eventMessage|contains:
+      - "authentication"
+      - "login"
+      - "credential"
+  condition: selection or selection2
+
+---
+title: macOS Keychain Access
+id: MACOS_Keychain_Access
+status: experimental
+description: Detects keychain access which may indicate credential theft attempts
+tags:
+  - attack.credential_access
+  - attack.t1555.001      # Credentials from Password Stores: Keychain
+logsource:
+  product: macos
+detection:
+  selection:
+    process|contains:
+      - security
+      - keychain
+  selection2:
+    eventMessage|contains:
+      - keychain
+      - "unlock-keychain"
+      - "find-generic-password"
+      - "find-internet-password"
+  condition: selection or selection2
+
+---
+title: macOS System Profiler Execution
+id: MACOS_System_Profiler
+status: experimental
+description: Detects system_profiler execution for system discovery
+tags:
+  - attack.discovery
+  - attack.t1082          # System Information Discovery
+logsource:
+  product: macos
+detection:
+  selection:
+    process|contains: system_profiler
+  selection2:
+    eventMessage|contains: system_profiler
+  condition: selection or selection2
+
+---
+title: macOS Process Injection Indicators
+id: MACOS_Process_Injection
+status: experimental
+description: Detects potential process injection activity via task_for_pid or mach ports
+tags:
+  - attack.privilege_escalation
+  - attack.t1055          # Process Injection
+  - attack.defense_evasion
+  - attack.t1055.002      # Process Injection: Portable Executable Injection
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - task_for_pid
+      - mach_inject
+      - dyld_insert
+      - DYLD_INSERT_LIBRARIES
+  condition: selection
+
+---
+title: macOS Suspicious Python/Ruby Script Execution
+id: MACOS_Script_Execution
+status: experimental
+description: Detects Python or Ruby script execution which could be malicious
+tags:
+  - attack.execution
+  - attack.t1059.006      # Command and Scripting Interpreter: Python
+  - attack.t1059.007      # Command and Scripting Interpreter: JavaScript
+logsource:
+  product: macos
+detection:
+  selection:
+    process|contains:
+      - python
+      - python3
+      - ruby
+      - perl
+      - osascript
+  selection2:
+    eventMessage|contains:
+      - ".py"
+      - ".rb"
+      - ".pl"
+      - "osascript"
+  condition: selection or selection2
+
+---
+title: macOS Code Signing Verification Failure
+id: MACOS_Codesign_Failure
+status: experimental
+description: Detects code signature verification failures
+tags:
+  - attack.defense_evasion
+  - attack.t1553          # Subvert Trust Controls
+  - attack.t1553.002      # Subvert Trust Controls: Code Signing
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - codesign
+      - "signature invalid"
+      - "signature verification failed"
+      - "untrusted"
+  condition: selection
+
+---
+title: macOS Airport Utility WiFi Scanning
+id: MACOS_WiFi_Scan
+status: experimental
+description: Detects WiFi scanning activity for network discovery
+tags:
+  - attack.discovery
+  - attack.t1016          # System Network Configuration Discovery
+  - attack.t1040          # Network Sniffing
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - airport
+      - wifi
+      - "wireless scan"
+  selection2:
+    process|contains: airport
+  condition: selection or selection2
+
+---
+title: macOS Time Machine Backup Modification
+id: MACOS_TimeMachine_Modification
+status: experimental
+description: Detects Time Machine backup modifications which could indicate anti-forensics
+tags:
+  - attack.defense_evasion
+  - attack.t1070.004      # Indicator Removal on Host: File Deletion
+  - attack.impact
+  - attack.t1490          # Inhibit System Recovery
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - tmutil
+      - "Time Machine"
+      - "backup delete"
+  selection2:
+    process|contains: tmutil
+  condition: selection or selection2
+
+---
+title: macOS Spotlight Index Manipulation
+id: MACOS_Spotlight_Manipulation
+status: experimental
+description: Detects Spotlight indexing manipulation which could hide files
+tags:
+  - attack.defense_evasion
+  - attack.t1070          # Indicator Removal on Host
+  - attack.t1564.001      # Hide Artifacts: Hidden Files and Directories
+logsource:
+  product: macos
+detection:
+  selection:
+    eventMessage|contains:
+      - mdutil
+      - spotlight
+      - "indexing"
+  selection2:
+    process|contains:
+      - mdutil
+      - mdfind
+      - mdls
+  condition: selection or selection2

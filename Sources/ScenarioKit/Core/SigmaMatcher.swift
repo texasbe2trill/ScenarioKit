@@ -7,6 +7,7 @@ struct SigmaRule {
     let description: String
     let condition: String
     let clauses: [String: SigmaClause]
+    let tags: [String]
 }
 
 struct SigmaClause {
@@ -88,6 +89,14 @@ private enum SigmaLoader {
               let detection = map["detection"] as? [String: Any],
               let condition = detection["condition"] as? String else { return nil }
 
+        // Extract tags (may contain MITRE ATT&CK technique IDs)
+        var tags: [String] = []
+        if let tagArray = map["tags"] as? [String] {
+            tags = tagArray
+        } else if let tagArray = map["tags"] as? [Any] {
+            tags = tagArray.compactMap { $0 as? String }
+        }
+
         var clauses: [String: SigmaClause] = [:]
         for (key, value) in detection {
             if key == "condition" { continue }
@@ -96,7 +105,7 @@ private enum SigmaLoader {
             }
         }
 
-        return SigmaRule(id: id, title: title, description: description, condition: condition, clauses: clauses)
+        return SigmaRule(id: id, title: title, description: description, condition: condition, clauses: clauses, tags: tags)
     }
 
     private static func decodeFields(map: [String: Any]) -> [String: [String]] {

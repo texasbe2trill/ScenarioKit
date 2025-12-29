@@ -24,9 +24,93 @@ enum StoryboardHTMLRenderer {
 
         let limitedFixtures = Array(storyboard.fixtures.prefix(maxFixtures))
 
+        // Compute statistics
+        var processSet = Set<String>()
+        var subsystemSet = Set<String>()
+        var hostSet = Set<String>()
+        var timestamps: [Date] = []
+        var threatCount = 0
+        var buildVersion: String?
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        let isoFormatterNoFrac = ISO8601DateFormatter()
+        isoFormatterNoFrac.formatOptions = [.withInternetDateTime]
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        
+        for fixture in storyboard.fixtures {
+            let fields = extractFields(from: fixture.event)
+            if let p = fields.process, !p.isEmpty, p != "null" { processSet.insert(p) }
+            if let s = fields.subsystem, !s.isEmpty { subsystemSet.insert(s) }
+            if let h = fields.host, !h.isEmpty { hostSet.insert(h) }
+            
+            // Extract build version from osVersion field
+            if buildVersion == nil, let event = fixture.event, case .object(let dict) = event {
+                if case .string(let osVer) = dict["osVersion"] {
+                    buildVersion = osVer
+                }
+            }
+            
+            if let timeStr = fields.time {
+                // Try ISO8601 with fractional seconds
+                if let date = isoFormatter.date(from: timeStr) {
+                    timestamps.append(date)
+                } else if let date = isoFormatterNoFrac.date(from: timeStr) {
+                    // Try ISO8601 without fractional seconds
+                    timestamps.append(date)
+                } else {
+                    // Try with timezone offset format: "2025-12-29 10:34:11.545268-0600"
+                    dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSSSSSZ"
+                    if let date = dateFormatter.date(from: timeStr) {
+                        timestamps.append(date)
+                    } else {
+                        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ssZ"
+                        if let date = dateFormatter.date(from: timeStr) {
+                            timestamps.append(date)
+                        }
+                    }
+                }
+            }
+            
+            // Count fixtures with either matchedRules (import-events) or expected (curated)
+            if let matched = fixture.matchedRules, !matched.isEmpty {
+                threatCount += 1
+            } else if let expected = fixture.expected, !expected.isEmpty {
+                threatCount += 1
+            }
+        }
+        
+        timestamps.sort()
+        let timeStart = timestamps.first.map { isoFormatter.string(from: $0) }
+        let timeEnd = timestamps.last.map { isoFormatter.string(from: $0) }
+        
+        // Count unique rules from both matchedRules (import-events) and expected (curated)
+        var allRules = Set<String>()
+        for fixture in storyboard.fixtures {
+            if let matched = fixture.matchedRules {
+                allRules.formUnion(matched)
+            }
+            if let expected = fixture.expected {
+                allRules.formUnion(expected)
+            }
+        }
+        let matchedRuleCount = allRules.count
+        
+        let stats = StatsData(
+            uniqueProcesses: processSet.count,
+            uniqueSubsystems: subsystemSet.count,
+            uniqueHosts: hostSet.count,
+            timeRangeStart: timeStart,
+            timeRangeEnd: timeEnd,
+            threatIndicators: threatCount,
+            matchedRuleCount: matchedRuleCount
+        )
+
         let storyData = StoryData(
             version: storyboard.version ?? 1,
-            build: storyboard.build,
+            build: storyboard.build ?? buildVersion,
             generatedAt: generatedAt,
             scenario: ScenarioData(
                 name: storyboard.scenario.name,
@@ -81,7 +165,8 @@ enum StoryboardHTMLRenderer {
                     )
                 },
             fixtureTotal: storyboard.fixtures.count,
-            fixtureShown: limitedFixtures.count
+            fixtureShown: limitedFixtures.count,
+            stats: stats
         )
 
         let encoder = JSONEncoder()
@@ -179,14 +264,32 @@ enum StoryboardHTMLRenderer {
         let keys = ["timestamp", "time", "ts", "datetime", "eventTime", "@timestamp"]
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        // Create a date formatter that handles various formats
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        
         for key in keys {
           if let raw = dict[key] {
             switch raw {
             case .string(let s):
-              if let d = formatter.date(from: s.trimmingCharacters(in: .whitespacesAndNewlines)) {
+              let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+              // Try ISO8601 first
+              if let d = formatter.date(from: trimmed) {
                 return formatter.string(from: d)
               }
-              return s
+              // Try with timezone offset format: "2025-12-29 10:34:11.545268-0600"
+              dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSSSSSZ"
+              if let d = dateFormatter.date(from: trimmed) {
+                return formatter.string(from: d)
+              }
+              // Try without fractional seconds: "2025-12-29 10:34:11-0600"
+              dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ssZ"
+              if let d = dateFormatter.date(from: trimmed) {
+                return formatter.string(from: d)
+              }
+              // Return as-is if can't parse
+              return trimmed
             case .int(let i):
               let date = Date(timeIntervalSince1970: TimeInterval(i))
               return formatter.string(from: date)
@@ -207,10 +310,19 @@ enum StoryboardHTMLRenderer {
       if command == nil, let msg = eventMessage?.lowercased(), msg.contains("curl") || msg.contains("wget") || msg.contains("bash") || msg.contains("sh -c") {
         command = eventMessage
       }
+      
+      // Enhanced process extraction
+      var processName = value(["process", "image", "exe", "ParentImage", "processName"])
+      if processName == nil || processName == "null" {
+        // Try to extract from paths
+        if let path = value(["processImagePath", "senderImagePath", "image", "path", "exe", "binary", "filePath"]) {
+          processName = (path as NSString).lastPathComponent
+        }
+      }
 
       return FixtureFields(
             time: timeString(),
-        process: value(["process", "image", "exe", "ParentImage", "processName"]),
+        process: processName,
         pid: value(["processID", "pid", "processId"]),
         subsystem: value(["subsystem", "system"]),
         category: value(["category"]),
@@ -222,7 +334,7 @@ enum StoryboardHTMLRenderer {
         url: value(["url"]),
         ip: value(["ip", "src_ip", "dst_ip", "sourceIPAddress", "destinationIP", "destinationIp", "remoteAddress"]),
         user: value(["user", "username", "account", "principal", "userIdentity"]),
-        host: value(["host", "hostname", "device", "computer"]),
+        host: value(["host", "hostname", "hostName", "device", "computer"]),
         eventMessage: eventMessage,
         composedMessage: composedMessage
       )
@@ -268,6 +380,17 @@ private struct StoryData: Codable {
     let fixtures: [FixtureData]
     let fixtureTotal: Int
     let fixtureShown: Int
+    let stats: StatsData
+}
+
+private struct StatsData: Codable {
+    let uniqueProcesses: Int
+    let uniqueSubsystems: Int
+    let uniqueHosts: Int
+    let timeRangeStart: String?
+    let timeRangeEnd: String?
+    let threatIndicators: Int
+    let matchedRuleCount: Int
 }
 
 private struct ScenarioData: Codable {
@@ -348,13 +471,14 @@ function render(){
   const scenario = STORY.scenario || {};
   const severity = (STORY.computedSeverity || "medium").toUpperCase();
   const fixtures = STORY.fixtures || [];
+  const stats = STORY.stats || {};
 
-  $("#scenarioName").textContent = scenario.name || "Untitled scenario";
-  $("#scenarioDesc").textContent = scenario.description || "";
-  $("#purposeBox").textContent = scenario.description || "Purpose statement goes here.";
+  $("#scenarioName").textContent = scenario.name || "Imported Security Events";
+  $("#scenarioDesc").textContent = scenario.description || "Automated analysis of macOS security events";
+  $("#purposeBox").textContent = scenario.description || "This storyboard presents captured macOS security events, filtered for high-signal indicators like TCC prompts, network activity, persistence mechanisms, and other security-relevant behaviors.";
   $("#scenarioBadge").textContent = STORY.badge || "Native Scenario";
   const firstNotes = (STORY.actions || []).map(a => a.notes).find(n => n && n.length) || "";
-  $("#notesBox").textContent = firstNotes || "—";
+  $("#notesBox").textContent = firstNotes || "Review captured events for suspicious activity. Cross-reference with known IOCs and hunting hypotheses.";
   $("#schemaVer").textContent = `schema v${STORY.version || "1"}`;
   $("#severityPill").textContent = `Severity: ${severity}`;
   const passCount = passingFixtures(fixtures);
@@ -362,7 +486,25 @@ function render(){
   $("#coveragePill").textContent = `Fixtures: ${passCount}/${fixtures.length} passing (${unknownCount} unknown)`;
   const testsIntro = document.getElementById("testsIntro");
   if (testsIntro) {
-    testsIntro.textContent = "Fixtures show the exact log payload that matched Sigma or importer logic. Expand raw JSON for full context.";
+    testsIntro.textContent = fixtures.length ? "Fixtures show the exact log payload that matched Sigma or importer logic. Expand raw JSON for full context." : "No fixtures captured. Check predicate filters or expand time window.";
+  }
+  
+  // Add statistics summary
+  const statsSummary = document.getElementById("statsSummary");
+  if (statsSummary) {
+    const timeRange = stats.timeRangeStart && stats.timeRangeEnd 
+      ? `${stats.timeRangeStart.substring(0,19)} → ${stats.timeRangeEnd.substring(0,19)}`
+      : "—";
+    statsSummary.innerHTML = `
+      <div class="kvs">
+        <div class="k">Time Range</div><div class="v mono">${escapeHtml(timeRange)}</div>
+        <div class="k">Unique Processes</div><div class="v">${stats.uniqueProcesses || 0}</div>
+        <div class="k">Unique Subsystems</div><div class="v">${stats.uniqueSubsystems || 0}</div>
+        <div class="k">Unique Hosts</div><div class="v">${stats.uniqueHosts || 0}</div>
+        <div class="k">Threat Indicators</div><div class="v badge" style="display:inline;">${stats.threatIndicators || 0} matched events</div>
+        <div class="k">Matched Rules</div><div class="v">${stats.matchedRuleCount || 0} Sigma rules</div>
+      </div>
+    `;
   }
 
   const tags = $("#tagChips");
@@ -375,25 +517,49 @@ function render(){
   });
 
   const sig = $("#signalsList"); sig.innerHTML = "";
-  (STORY.signals || []).forEach(s=>{
-    const li = document.createElement("li");
-    li.textContent = s.label;
-    sig.appendChild(li);
-  });
+  if ((STORY.signals || []).length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "box";
+    empty.style.color = "var(--muted)";
+    empty.textContent = "No explicit signals defined. Auto-generated from captured events.";
+    sig.appendChild(empty);
+  } else {
+    (STORY.signals || []).forEach(s=>{
+      const li = document.createElement("li");
+      li.textContent = s.label;
+      sig.appendChild(li);
+    });
+  }
 
   const rc = $("#rulesListCompact"); rc.innerHTML = "";
-  (STORY.rules || []).forEach(r=>{
-    const li = document.createElement("li");
-    li.innerHTML = `<span class="mono">${escapeHtml(r.id)}</span> — ${escapeHtml(r.title)} <span class="badge">${(r.severity||"").toUpperCase()}</span>`;
-    rc.appendChild(li);
-  });
+  if ((STORY.rules || []).length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "box";
+    empty.style.color = "var(--muted)";
+    empty.textContent = "No Sigma rules matched. Events kept by importer logic (noise filter + security categories).";
+    rc.appendChild(empty);
+  } else {
+    (STORY.rules || []).forEach(r=>{
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="mono">${escapeHtml(r.id)}</span> — ${escapeHtml(r.title)} <span class="badge">${(r.severity||"").toUpperCase()}</span>`;
+      rc.appendChild(li);
+    });
+  }
 
   const ac = $("#actionsListCompact"); ac.innerHTML = "";
-  (STORY.actions || []).forEach(a=>{
-    const li = document.createElement("li");
-    li.innerHTML = `<span class="mono">${escapeHtml(a.id)}</span> — ${escapeHtml(a.title)}`;
-    ac.appendChild(li);
-  });
+  if ((STORY.actions || []).length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "box";
+    empty.style.color = "var(--muted)";
+    empty.textContent = "No response actions defined. Review fixtures and determine appropriate containment steps.";
+    ac.appendChild(empty);
+  } else {
+    (STORY.actions || []).forEach(a=>{
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="mono">${escapeHtml(a.id)}</span> — ${escapeHtml(a.title)}`;
+      ac.appendChild(li);
+    });
+  }
 
   $("#ownerField").textContent = scenario.owner || "—";
   $("#severityField").textContent = severity;
@@ -403,22 +569,38 @@ function render(){
   $("#generatedAt").textContent = `generatedAt: ${STORY.generatedAt || ""}`;
 
   const tl = $("#timelineList"); tl.innerHTML = "";
-  (STORY.timeline || []).forEach(t=>{
-    const item = document.createElement("div");
-    item.className = "item";
-    item.innerHTML = `
-      <div class="itemhead">
-        <div><strong>${escapeHtml(t.headline || "")}</strong><div class="subtitle">${escapeHtml(t.detail || "")}</div></div>
-        <div class="time">${escapeHtml(t.time || "")}</div>
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <span class="badge">severity: ${(t.severity||"info").toUpperCase()}</span>
-      </div>
-    `;
-    tl.appendChild(item);
-  });
+  if ((STORY.timeline || []).length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "box";
+    empty.style.color = "var(--muted)";
+    empty.textContent = "No curated timeline. For draft storyboards, review fixtures tab for chronological events.";
+    tl.appendChild(empty);
+  } else {
+    (STORY.timeline || []).forEach(t=>{
+      const item = document.createElement("div");
+      item.className = "item";
+      item.innerHTML = `
+        <div class="itemhead">
+          <div><strong>${escapeHtml(t.headline || "")}</strong><div class="subtitle">${escapeHtml(t.detail || "")}</div></div>
+          <div class="time">${escapeHtml(t.time || "")}</div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <span class="badge">severity: ${(t.severity||"info").toUpperCase()}</span>
+        </div>
+      `;
+      tl.appendChild(item);
+    });
+  }
 
   const rf = $("#rulesFull"); rf.innerHTML = "";
+  if ((STORY.rules || []).length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "box";
+    empty.style.color = "var(--muted)";
+    empty.textContent = "No Sigma rules triggered. This means no events matched bundled detection logic. Events were still kept by the importer's noise filter.";
+    rf.appendChild(empty);
+    return;
+  }
   (STORY.rules || []).forEach(r=>{
     const box = document.createElement("div");
     box.className = "item";
@@ -448,6 +630,14 @@ function render(){
   });
 
   const af = $("#actionsFull"); af.innerHTML = "";
+  if ((STORY.actions || []).length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "box";
+    empty.style.color = "var(--muted)";
+    empty.innerHTML = "No predefined response actions. Suggested steps:<ul style='margin:10px 0; padding-left:18px;'><li>Isolate affected systems if threat confirmed</li><li>Collect additional forensics (disk, memory, network captures)</li><li>Review lateral movement and credential access indicators</li><li>Update detection rules based on findings</li></ul>";
+    af.appendChild(empty);
+    return;
+  }
   (STORY.actions || []).forEach(a=>{
     const box = document.createElement("div");
     box.className = "item";
@@ -875,6 +1065,9 @@ private let lightTemplate = #"""
             <div class="k">Build</div><div class="v mono" id="buildField"></div>
           </div>
 
+          <h3>Statistics</h3>
+          <div id="statsSummary"></div>
+
           <h3>Notes</h3>
           <div class="box" id="notesBox">
             This panel is ideal for constraints, assumptions, and “what good looks like”.
@@ -1150,6 +1343,9 @@ private let darkTemplate = #"""
             <div class="k">Fixtures</div><div class="v" id="fixturesField"></div>
             <div class="k">Build</div><div class="v mono" id="buildField"></div>
           </div>
+
+          <h3>Statistics</h3>
+          <div id="statsSummary"></div>
 
           <h3>Notes</h3>
           <div class="box" id="notesBox">

@@ -1,11 +1,11 @@
 version: 1
-build: "example-macos"
+build: "macOS 14.2 (23C64)"
 
 scenario:
-  name: "macOS Suspicious Activity Walkthrough"
-  description: "Example storyboard used to validate render + import-events end-to-end."
-  owner: "ScenarioKit Examples"
-  tags: ["macos", "example", "walkthrough"]
+  name: "macOS Security Incident - Multi-Vector Attack Detection"
+  description: "Comprehensive detection of TCC abuse, network exfiltration, persistence mechanisms, privilege escalation, and lateral movement across macOS endpoints."
+  owner: "ScenarioKit Security Team"
+  tags: ["macos", "multi-vector", "tcc", "persistence", "lateral-movement"]
 
 severity: medium
 
@@ -14,24 +14,42 @@ signals:
     label: "Endpoint Process Telemetry"
   - id: unified_log
     label: "macOS Unified Logs"
+  - id: tcc
+    label: "TCC / Privacy Events"
 
 rules:
-  - id: RULE-IMPORTED-001
-    title: "Draft: Potential persistence via LaunchAgents/Daemons"
-    severity: high
-    techniques: []
-    match:
-      - ok: true
-        text: "event contains LaunchAgent/Daemon or plist writes"
-    explanation: "Draft detection: LaunchAgent/Daemon patterns detected. Review persistence locations."
-  - id: RULE-IMPORTED-002
-    title: "Draft: Outbound network indicator observed"
+  - id: MACOS_Command_HTTP_Fetch
+    title: "macOS Command HTTP Fetch"
     severity: medium
-    techniques: []
+    techniques: ["T1071.001", "T1105"]
     match:
       - ok: true
-        text: "event includes IP/URL/domain indicators"
-    explanation: "Draft detection: network indicators present. Review destinations and frequency."
+        text: "proc and url"
+    explanation: "Detects curl/wget style HTTP fetches with explicit URL indicators. Commonly used for command-and-control or ingress tool transfer."
+  - id: MACOS_TCC_Prompt
+    title: "macOS TCC Prompt Activity"
+    severity: medium
+    techniques: ["T1548", "T1562.001"]
+    match:
+      - ok: true
+        text: "selection or selection2"
+    explanation: "Detects macOS Transparency, Consent, and Control (TCC) prompts which may indicate privilege escalation attempts or defense evasion."
+  - id: MACOS_Keychain_Access
+    title: "macOS Keychain Access"
+    severity: high
+    techniques: ["T1555.001"]
+    match:
+      - ok: true
+        text: "selection or selection2"
+    explanation: "Detects keychain access which may indicate credential theft attempts using the security command."
+  - id: MACOS_Script_Execution
+    title: "Suspicious Script Execution"
+    severity: medium
+    techniques: ["T1059.006", "T1059.007"]
+    match:
+      - ok: true
+        text: "selection or selection2"
+    explanation: "Detects Python, Ruby, or osascript execution which could be malicious scripting activity."
 
 actions:
   - id: ACT-TRIAGE
@@ -48,6 +66,14 @@ actions:
       - "Identify first/last seen times and sequences"
       - "Pivot on shared indicators (hashes, domains, roles)"
     notes: "Capture for report: timestamps, user/host pairs, indicator list."
+  - id: ACT-CONTAINMENT
+    title: "Containment actions"
+    steps:
+      - "Disable compromised user accounts"
+      - "Block malicious domains/IPs at firewall"
+      - "Remove persistence mechanisms (LaunchAgents, login items)"
+      - "Revoke TCC permissions for suspicious applications"
+    notes: "Document all containment actions with timestamps."
 
 timeline:
   - time: "2025-12-28T14:03:12Z"
@@ -59,60 +85,72 @@ timeline:
     detail: "user=chris · host=MBP-CHRIS · proc=curl · subsystem=com.apple.network"
     severity: medium
   - time: "2025-12-28T14:05:44Z"
-    headline: "Attempted to register a login item"
-    detail: "user=chris · host=MBP-CHRIS · proc=osascript · subsystem=com.apple.launchservices"
+    headline: "TCC prompt for Desktop folder access"
+    detail: "user=chris · host=MBP-CHRIS · proc=Terminal · subsystem=com.apple.TCC"
     severity: medium
   - time: "2025-12-28T14:07:10Z"
-    headline: "Queried keychain item metadata"
+    headline: "Keychain credential access attempt"
     detail: "user=chris · host=MBP-CHRIS · proc=security · subsystem=com.apple.security"
     severity: high
 
 fixtures:
   - id: EVT-001
-    expected: []
-    result: unknown
-    event:
-      timestamp: "2025-12-28T14:03:12Z"
-      host: "MBP-CHRIS"
-      user: "chris"
-      process: "Terminal"
-      event_type: "process_start"
-      subsystem: "com.apple.securityd"
-      message: "User launched zsh via Terminal"
-      tags: ["execution", "interactive"]
-  - id: EVT-002
-    expected: []
-    result: unknown
+    expected: ["MACOS_Command_HTTP_Fetch"]
+    result: pass
     event:
       timestamp: "2025-12-28T14:04:01Z"
-      host: "MBP-CHRIS"
-      user: "chris"
+      hostName: "MBP-CHRIS"
       process: "curl"
-      event_type: "network_connection"
+      processID: 9188
+      processImagePath: "/usr/bin/curl"
       subsystem: "com.apple.network"
-      message: "Outbound HTTPS request to api.example.com:443"
-      tags: ["network", "egress"]
-  - id: EVT-003
-    expected: []
-    result: unknown
+      category: "Network"
+      eventMessage: "Outbound HTTPS request to https://api.example.com:443"
+      composedMessage: "curl https://api.example.com/data -o output.json"
+      senderImagePath: "/usr/bin/curl"
+      osVersion: "macOS 14.2 (23C64)"
+  - id: EVT-002
+    expected: ["MACOS_TCC_Prompt"]
+    result: pass
     event:
       timestamp: "2025-12-28T14:05:44Z"
-      host: "MBP-CHRIS"
-      user: "chris"
-      process: "osascript"
-      event_type: "persistence_attempt"
-      subsystem: "com.apple.launchservices"
-      message: "Attempted to register a login item"
-      tags: ["persistence", "launchagent"]
-  - id: EVT-004
-    expected: []
-    result: unknown
+      hostName: "MBP-CHRIS"
+      process: "Terminal"
+      processID: 9123
+      processImagePath: "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"
+      subsystem: "com.apple.TCC"
+      category: "Access"
+      eventMessage: "Prompting user for access to Desktop folder via kTCCServiceSystemPolicyDesktopFolder"
+      composedMessage: "TCC prompt for Desktop folder access"
+      senderImagePath: "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"
+      osVersion: "macOS 14.2 (23C64)"
+  - id: EVT-003
+    expected: ["MACOS_Keychain_Access"]
+    result: pass
     event:
       timestamp: "2025-12-28T14:07:10Z"
-      host: "MBP-CHRIS"
-      user: "chris"
+      hostName: "MBP-CHRIS"
       process: "security"
-      event_type: "credential_access"
+      processID: 9440
+      processImagePath: "/usr/bin/security"
       subsystem: "com.apple.security"
-      message: "Queried keychain item metadata"
-      tags: ["credentials", "keychain"]
+      category: "KeychainAccess"
+      eventMessage: "find-generic-password -a chris -s login.keychain"
+      composedMessage: "Keychain credential access attempt"
+      senderImagePath: "/usr/bin/security"
+      osVersion: "macOS 14.2 (23C64)"
+  - id: EVT-004
+    expected: ["MACOS_Script_Execution"]
+    result: pass
+    event:
+      timestamp: "2025-12-28T14:08:30Z"
+      hostName: "MBP-CHRIS"
+      process: "osascript"
+      processID: 9301
+      processImagePath: "/usr/bin/osascript"
+      subsystem: "com.apple.launchservices"
+      category: "Execution"
+      eventMessage: "Executing osascript to register login item"
+      composedMessage: "osascript persistence attempt detected"
+      senderImagePath: "/usr/bin/osascript"
+      osVersion: "macOS 14.2 (23C64)"
